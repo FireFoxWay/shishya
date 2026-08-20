@@ -1,0 +1,68 @@
+# ============================================================================
+# SHISHYA — the clone's sandbox.
+#
+# A headless Ubuntu VM with a virtual display. The clone lives in here and
+# nowhere else: it can only see the folders mounted below, and (once the
+# egress lock is on) can only reach the host's local model.
+#
+#   limactl start --name=shishya vm/lima.yaml
+#   limactl snapshot create shishya --tag clean
+#   limactl snapshot apply  shishya --tag clean     # the undo button
+# ============================================================================
+
+vmType: "vz"
+rosetta:
+  enabled: false
+
+images:
+  - location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-arm64.img"
+    arch: "aarch64"
+
+cpus: 4
+memory: "8GiB"
+disk: "40GiB"
+
+# ─── The permission boundary ────────────────────────────────────────────────
+# This is the whole of it. Not a policy we enforce in code — the clone cannot
+# reach anything that isn't on this list, because it isn't mounted.
+# `~` here is the HOST's home. Add a line to grant a folder; delete one to
+# revoke it. Nothing else on the laptop exists as far as the clone knows.
+mounts:
+  # The repo itself, read-only, so the VM can run its own provisioning and
+  # the in-VM agent without us copying files around.
+  - location: "/Users/karthikeyakoduru/Desktop/--/Projects/shishya"
+    mountPoint: "/opt/shishya"
+    writable: false
+
+  # The only writable window into the host. Everything the clone is allowed
+  # to touch goes here, and nothing else on the laptop is reachable at all.
+  - location: "/Users/karthikeyakoduru/Desktop/--/Projects/shishya/shared"
+    mountPoint: "/home/clone/shared"
+    writable: true
+
+# ─── What we expose back to the host ────────────────────────────────────────
+portForwards:
+  - guestPort: 6080          # noVNC — the clone's screen, in your browser
+    hostPort: 6080
+  - guestPort: 7070          # the in-VM agent bridge (recorder + executor)
+    hostPort: 7070
+
+# The host's Ollama, reachable from inside as host.lima.internal:11434.
+hostResolver:
+  enabled: true
+
+# We are not running containers. Lima pulls a ~500MB nerdctl archive by
+# default; the clone needs a desktop, not a container runtime.
+containerd:
+  system: false
+  user: false
+
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux
+      # Idempotent: `limactl start` re-runs provisioning on every boot.
+      [ -f /var/lib/shishya-provisioned ] && exit 0
+      bash /opt/shishya/vm/provision.sh
+      touch /var/lib/shishya-provisioned

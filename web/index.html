@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SHISHYA — the clone</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<header id="topbar">
+  <div class="brand">
+    <span class="mark"></span>
+    <span class="bName">SHISHYA</span>
+    <span class="bTag">शिष्य // LOCAL APPRENTICE</span>
+  </div>
+  <div class="topRight">
+    <div class="kv"><span>SANDBOX</span><b id="vmState">…</b></div>
+    <div class="kv"><span>EGRESS</span><b id="netState" class="locked">LOCKED</b></div>
+    <div class="kv"><span>DENIED</span><b id="denyCount">0</b></div>
+  </div>
+</header>
+
+<main id="stage">
+
+  <!-- ─── the clone's screen ─────────────────────────────────────────── -->
+  <section class="pane grow">
+    <div class="paneHead">
+      <span>THE CLONE</span>
+      <div class="tools">
+        <button id="btnWheel" class="tool">TAKE THE WHEEL</button>
+        <button id="btnReload" class="tool ghost">RECONNECT</button>
+      </div>
+    </div>
+    <!-- noVNC is served from inside the VM itself (port 6080, forwarded).
+         An iframe until the recorder needs raw framebuffer access. -->
+    <div class="screen">
+      <iframe id="vnc" title="clone display"
+              src="http://localhost:6080/vnc.html?autoconnect=1&resize=scale&view_only=1"></iframe>
+      <div id="screenMsg" class="msg">sandbox not running</div>
+    </div>
+  </section>
+
+  <!-- ─── ledger ─────────────────────────────────────────────────────── -->
+  <aside class="pane col">
+    <div class="paneHead"><span>PERMISSION LEDGER</span></div>
+    <div id="ledger" class="ledger"></div>
+
+    <div class="paneHead"><span>SANDBOX</span></div>
+    <div class="controls">
+      <button id="btnCreate" class="tool">FIRST BOOT</button>
+      <button id="btnStart"  class="tool">START</button>
+      <button id="btnStop"   class="tool ghost">STOP</button>
+      <button id="btnSnap"   class="tool">MARK CLEAN</button>
+      <button id="btnRoll"   class="tool danger">ROLL BACK</button>
+      <button id="btnNet"    class="tool">UNLOCK NET</button>
+    </div>
+    <div id="log" class="log"></div>
+  </aside>
+
+</main>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

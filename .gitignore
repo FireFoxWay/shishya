@@ -1,0 +1,13 @@
+# Runtime state, not source.
+var/
+*.log
+
+# Recorded demonstrations: large, full of screenshots, and specific to one
+# machine's session. Traces are data, not code.
+shared/traces/
+shared/inbox/*
+!shared/inbox/.gitkeep
+
+.DS_Store
+__pycache__/
+*.pyc
