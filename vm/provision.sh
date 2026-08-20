@@ -30,18 +30,69 @@ apt-get install -y --no-install-recommends \
 # A separate unprivileged user, no sudo. Even inside the sandbox the clone
 # is not root — if the agent goes wrong we want it to fail small.
 id clone &>/dev/null || useradd -m -s /bin/bash clone
-install -d -o clone -g clone /home/clone/shared /home/clone/.config/openbox
+
+# Lima creates /home/clone first, as the parent of the virtiofs mount, so
+# `useradd -m` finds it already there and leaves it owned by root. Without
+# this the clone cannot write to its own home and nothing works.
+# Non-recursive on purpose: -R would descend into the mount and fail.
+chown clone:clone /home/clone
+
+# NOT /home/clone/shared — that is the virtiofs mountpoint, and chowning a
+# virtiofs mount fails with EPERM. Its ownership comes from the host side.
+install -d -o clone -g clone /home/clone/.config/openbox
 
 # ─── Display, WM, VNC, noVNC ────────────────────────────────────────────────
 # 1440x900 to match a laptop screen: taught procedures reference on-screen
 # layout, so the resolution wants to stay fixed forever once we start
 # recording. Changing it later invalidates recorded traces.
+# ─── One session bus, at an address everybody knows ─────────────────────────
+# A headless systemd desktop has no D-Bus session bus, so at-spi-bus-launcher
+# never starts and the accessibility tree comes back empty — which would leave
+# the executor with nothing but pixels. Rather than let each process discover
+# its own bus, we pin one at a fixed path and hand it to everything: the WM,
+# the apps, and the recorder must all be on the SAME bus or they cannot see
+# each other's widgets.
+cat > /etc/shishya.env <<'ENV'
+DISPLAY=:0
+DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/shishya-bus
+GTK_MODULES=gail:atk-bridge
+QT_ACCESSIBILITY=1
+NO_AT_BRIDGE=0
+GTK_A11Y=atspi
+ENV
+
+cat > /etc/systemd/system/shishya-dbus.service <<'UNIT'
+[Unit]
+Description=Shishya session bus
+[Service]
+User=clone
+ExecStartPre=/bin/rm -f /tmp/shishya-bus
+ExecStart=/usr/bin/dbus-daemon --session --address=unix:path=/tmp/shishya-bus --nofork --nopidfile
+Restart=always
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+cat > /etc/systemd/system/shishya-atspi.service <<'UNIT'
+[Unit]
+Description=Shishya accessibility bus
+After=shishya-dbus.service shishya-display.service
+Requires=shishya-dbus.service
+[Service]
+User=clone
+EnvironmentFile=/etc/shishya.env
+ExecStart=/usr/libexec/at-spi-bus-launcher --launch-immediately
+Restart=always
+[Install]
+WantedBy=multi-user.target
+UNIT
+
 cat > /etc/systemd/system/shishya-display.service <<'UNIT'
 [Unit]
 Description=Shishya virtual display
 [Service]
 User=clone
-Environment=DISPLAY=:0
+EnvironmentFile=/etc/shishya.env
 ExecStart=/usr/bin/Xvfb :0 -screen 0 1440x900x24 -nolisten tcp
 Restart=always
 [Install]
@@ -51,16 +102,11 @@ UNIT
 cat > /etc/systemd/system/shishya-wm.service <<'UNIT'
 [Unit]
 Description=Shishya window manager
-After=shishya-display.service
-Requires=shishya-display.service
+After=shishya-display.service shishya-atspi.service
+Requires=shishya-display.service shishya-atspi.service
 [Service]
 User=clone
-Environment=DISPLAY=:0
-# AT-SPI is opt-in on most distros; without this the accessibility tree is
-# empty and the executor is blind to everything but pixels.
-Environment=GTK_MODULES=gail:atk-bridge
-Environment=QT_ACCESSIBILITY=1
-Environment=NO_AT_BRIDGE=0
+EnvironmentFile=/etc/shishya.env
 ExecStart=/usr/bin/openbox
 Restart=always
 [Install]
@@ -74,7 +120,7 @@ After=shishya-wm.service
 Requires=shishya-wm.service
 [Service]
 User=clone
-Environment=DISPLAY=:0
+EnvironmentFile=/etc/shishya.env
 # -shared so you can watch while the agent drives: take-the-wheel depends on
 # host and agent holding the same session at once, not taking turns.
 ExecStart=/usr/bin/x11vnc -display :0 -forever -shared -nopw -rfbport 5900 -noxdamage
@@ -96,6 +142,10 @@ WantedBy=multi-user.target
 UNIT
 
 systemctl daemon-reload
-systemctl enable --now shishya-display shishya-wm shishya-vnc shishya-novnc
+systemctl enable --now shishya-dbus shishya-display shishya-atspi shishya-wm shishya-vnc shishya-novnc
+
+# GTK apps check this before exposing anything to AT-SPI.
+sudo -u clone env DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/shishya-bus \
+  gsettings set org.gnome.desktop.interface toolkit-accessibility true 2>/dev/null || true
 
 echo "shishya: desktop up on :0 — noVNC at http://localhost:6080/vnc.html"
