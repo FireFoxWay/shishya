@@ -81,6 +81,27 @@ def shell(script, user="clone", timeout=120):
     return {"code": p.returncode, "out": p.stdout, "err": p.stderr}
 
 
+def launch_app(name):
+    """Start one of the sandbox's apps, as the clone, on its display.
+
+    setsid and a closed stdin matter: without them the process stays attached
+    to this ssh session and dies with it, or holds the pipe open and hangs
+    the caller. Both have bitten us.
+    """
+    script = (
+        "set -a; . /etc/shishya.env; set +a; "
+        "cd /opt/shishya/vm/shell && "
+        f"setsid python3 {name} </dev/null >/tmp/{name}.log 2>&1 & disown"
+    )
+    subprocess.Popen(
+        ["limactl", "shell", "--workdir", "/", NAME, "--",
+         "sudo", "-u", "clone", "bash", "-lc", script],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    return {"launched": name}
+
+
 # ─── The undo button ────────────────────────────────────────────────────────
 # NOT `limactl snapshot` — that is unimplemented for the `vz` driver, which
 # stores a raw disk rather than qcow2. macOS gives us something better: the

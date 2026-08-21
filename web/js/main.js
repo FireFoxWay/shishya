@@ -186,6 +186,13 @@ async function send(files) {
   if (done) refresh();
 }
 
+/* Launching from out here never touches the display, so it still works on
+   the evenings when clicking inside the sandbox does not. */
+for (const btn of document.querySelectorAll("#apps [data-app]")) {
+  btn.onclick = () => guard(btn, `open ${btn.textContent.toLowerCase()}`,
+                            () => api.launch(btn.dataset.app));
+}
+
 $("btnWheel").onclick = () => setWheel(!wheel);
 $("btnReload").onclick = () => { $("vnc").src = $("vnc").src; log("reconnecting to clone display"); };
 

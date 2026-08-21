@@ -34,6 +34,16 @@ INBOX = os.path.join(ROOT, "shared", "inbox")
 # drop cannot fill the disk the VM is running on.
 MAX_UPLOAD = 64 * 1024 * 1024
 
+# An explicit list, not "whatever file name you send". This endpoint runs a
+# program inside the sandbox; it takes a choice from a menu, never a path.
+LAUNCHABLE = {
+    "training_app.py": "Training Data",
+    "files_app.py": "Files",
+    "activity_app.py": "Activity",
+    "make_app.py": "Make a Document",
+    "inbox_app.py": "Inbox",
+}
+
 
 def safe_filename(raw):
     """The name arrives in a header the browser filled in from a dropped file.
@@ -127,6 +137,21 @@ class Handler(SimpleHTTPRequestHandler):
                 "egress": vm.egress_state() if live else {"locked": None,
                                                           "detail": "sandbox is not running"},
             }
+        if route == "launch":
+            # Launch an app inside the sandbox from out here.
+            #
+            # Clicking inside the sandbox goes through noVNC, and that path
+            # has failed twice under demo conditions — stale websockify
+            # children swallow button releases and every control goes dead
+            # while still looking fine. This route does not touch the display
+            # at all, so it keeps working when that breaks. It is also the
+            # better story: you drive from your side, the clone works on its.
+            name = str(body.get("app", ""))
+            if name not in LAUNCHABLE:
+                return {"error": f"unknown app {name!r}"}
+            ledger.record(ledger.INFO, "app.launch", name, actor="guru")
+            return vm.launch_app(name)
+
         if route == "inbox":
             try:
                 waiting = sorted(f for f in os.listdir(INBOX)

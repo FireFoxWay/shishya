@@ -30,6 +30,7 @@ async function upload(file) {
 export const api = {
   upload,
   inbox:    ()      => call("inbox"),
+  launch:   (app)   => call("launch", { app }),
   status:   ()      => call("status"),
   ledger:   ()      => call("ledger"),
   create:   ()      => call("vm/create",   {}),

@@ -175,6 +175,42 @@ class Library:
         return [self.chunks[i] for _, i in scored[:k]]
 
 
+# ─── asking vs asking-for ───────────────────────────────────────────────────
+# People type what they want into whichever window is already open. Told to
+# "create a comparison table in Excel", a question-answering app that replies
+# "I cannot find it in the documents" is technically obedient and plainly
+# wrong. So the app reads intent first and hands creation work to the document
+# writer, using the same documents as source.
+#
+# Keyword matching rather than asking the model: it is instant, it is
+# predictable, and a misfire here would send someone's question off to build a
+# spreadsheet — a surprise far more annoying than a missed shortcut.
+
+MAKE_VERBS = ("create", "make", "build", "generate", "draft", "produce",
+              "prepare", "write me", "give me", "put together", "compile")
+
+MAKE_KINDS = {
+    "Spreadsheet": ("excel", "xlsx", "spreadsheet", "sheet", "table", "grid",
+                    "comparison table", "csv"),
+    "Presentation": ("powerpoint", "ppt", "pptx", "presentation", "deck",
+                     "slides", "slide"),
+    "Document": ("word", "docx", "document", "report", "brief", "note",
+                 "letter", "summary document", "write-up"),
+}
+
+
+def wants_a_file(question):
+    """Returns the kind to build, or None if this is an ordinary question."""
+    q = question.lower()
+    if not any(v in q for v in MAKE_VERBS):
+        return None
+    # Spreadsheet before Document: "comparison table in a report" is a table.
+    for kind in ("Spreadsheet", "Presentation", "Document"):
+        if any(word in q for word in MAKE_KINDS[kind]):
+            return kind
+    return None
+
+
 SYSTEM = (
     "You answer using the passages you are given.\n"
     "Every fact, figure, name and date must come from them — never from your "
@@ -311,7 +347,11 @@ class TrainingApp(Gtk.Window):
         common.set_state("working")
 
         passages = "\n\n".join(f"[from {src}]\n{text}" for src, text in found)
-        sources = "\n".join(f"  · {src}" for src in sorted({src for src, _ in found}))
+        # A spreadsheet answers as both a table and a text chunk, so it
+        # arrives under two labels — "file.xlsx" and "file.xlsx — Sheet1".
+        # The reader only cares which document it came from.
+        sources = "\n".join(
+            f"  · {src}" for src in sorted({src.split(" — ")[0] for src, _ in found}))
 
         def work():
             if kind:
