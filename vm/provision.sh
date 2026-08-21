@@ -23,6 +23,7 @@ apt-get install -y --no-install-recommends \
   novnc websockify \
   python3-pip python3-venv python3-tk \
   python3-gi python3-gi-cairo gir1.2-gtk-3.0 \
+  python3-openpyxl python3-docx \
   at-spi2-core python3-pyatspi gir1.2-atspi-2.0 \
   libreoffice-calc libreoffice-writer evince poppler-utils \
   fonts-dejavu-core
@@ -144,6 +145,12 @@ Restart=always
 [Install]
 WantedBy=multi-user.target
 UNIT
+
+# python-pptx is not packaged for 24.04. --break-system-packages is fine
+# here and only here: this is a disposable sandbox whose entire filesystem is
+# one `cp -c` away from being restored.
+pip3 install --break-system-packages --quiet python-pptx || \
+  echo "shishya: WARNING python-pptx unavailable — PowerPoint output disabled"
 
 systemctl daemon-reload
 systemctl enable --now shishya-dbus shishya-display shishya-atspi shishya-wm shishya-vnc shishya-novnc

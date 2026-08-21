@@ -128,3 +128,29 @@ body {
 
 ::-webkit-scrollbar { width: 8px; }
 ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+
+/* ─── drop zone ─────────────────────────────────────────────────────────── */
+
+.muted { color: var(--dim); font-size: 9px; letter-spacing: .1em; }
+
+.drop {
+  margin: 12px 14px;
+  padding: 18px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 4px;
+  text-align: center;
+  cursor: pointer;
+  color: var(--dim);
+}
+.drop span { display: block; font-size: 11px; letter-spacing: .1em; }
+.drop em { display: block; font-style: normal; font-size: 9px; margin-top: 4px; opacity: .7; }
+.drop:hover { border-color: var(--accent); color: var(--ink); }
+/* The whole panel is a drop target, so the cue has to be unmissable —
+   otherwise a file dropped an inch off target looks like a broken feature. */
+.drop.over {
+  border-color: var(--accent);
+  border-style: solid;
+  background: rgba(56,189,248,.09);
+  color: var(--accent);
+}
+.drop.busy { border-color: var(--warn); color: var(--warn); }

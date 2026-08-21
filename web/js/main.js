@@ -76,9 +76,11 @@ function paintStatus(s) {
 
 async function refresh() {
   try {
-    const [s, l] = await Promise.all([api.status(), api.ledger()]);
+    const [s, l, box] = await Promise.all([api.status(), api.ledger(), api.inbox()]);
     paintStatus(s);
     paintLedger(l.entries);
+    const n = box.waiting.length;
+    $("inboxCount").textContent = n ? `${n} waiting` : "empty";
   } catch (e) {
     $("vmState").textContent = "HOST DOWN";
     $("vmState").className = "no";
@@ -120,6 +122,41 @@ $("btnNet").onclick = e => guard(e.target, "egress", async () => {
   $("btnNet").textContent = netLocked ? "UNLOCK NET" : "LOCK NET";
   return out;
 });
+
+/* ─── sending files to the clone ─────────────────────────────────────────── */
+
+const drop = $("drop"), picker = $("picker");
+
+drop.onclick = () => picker.click();
+picker.onchange = () => { send([...picker.files]); picker.value = ""; };
+
+/* Listen on the window, not just the box: people aim at the panel, and a
+   drop that lands two pixels outside would otherwise navigate the browser
+   away to the file itself. */
+for (const ev of ["dragenter", "dragover"]) {
+  window.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); });
+}
+for (const ev of ["dragleave", "drop"]) {
+  window.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); });
+}
+window.addEventListener("drop", e => send([...(e.dataTransfer?.files ?? [])]));
+
+async function send(files) {
+  if (!files.length) return;
+  drop.classList.add("busy");
+  let done = 0;
+  for (const file of files) {
+    try {
+      const out = await api.upload(file);
+      log(`sent ${out.name} (${Math.round(out.bytes / 1024)}kB)`, "ok");
+      done++;
+    } catch (e) {
+      log(`${file.name} ✗ ${e.message}`, "no");
+    }
+  }
+  drop.classList.remove("busy");
+  if (done) refresh();
+}
 
 $("btnWheel").onclick = () => setWheel(!wheel);
 $("btnReload").onclick = () => { $("vnc").src = $("vnc").src; log("reconnecting to clone display"); };

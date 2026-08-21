@@ -5,6 +5,9 @@ var/
 # Recorded demonstrations: large, full of screenshots, and specific to one
 # machine's session. Traces are data, not code.
 shared/traces/
+# Generated documents and incoming files are output, not source.
+shared/work/*
+!shared/work/.gitkeep
 shared/inbox/*
 !shared/inbox/.gitkeep
 

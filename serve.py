@@ -14,7 +14,9 @@ dependency that can end the demo.
 
 import json
 import os
+import re
 import sys
+import time
 import traceback
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
@@ -25,6 +27,25 @@ import ledger            # noqa: E402
 import vm                # noqa: E402
 
 WEB = os.path.join(ROOT, "web")
+INBOX = os.path.join(ROOT, "shared", "inbox")
+
+# Files come in over a loopback socket from a page anyone on this machine can
+# open, and land in a directory the sandbox reads. Cap the size so a stray
+# drop cannot fill the disk the VM is running on.
+MAX_UPLOAD = 64 * 1024 * 1024
+
+
+def safe_filename(raw):
+    """The name arrives in a header the browser filled in from a dropped file.
+
+    Treat it as hostile: strip any directory part, refuse dotfiles and
+    traversal, and keep it to characters that cannot mean anything to a
+    shell. A dropped file must never be able to choose where it lands.
+    """
+    name = os.path.basename(raw or "").strip()
+    name = re.sub(r"[^A-Za-z0-9._ ()-]", "_", name)
+    name = name.lstrip(".") or "dropped-file"
+    return name[:120]
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -39,9 +60,46 @@ class Handler(SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def do_POST(self):
+        # Uploads are raw bytes, not JSON, so they bypass the usual API path.
+        if self.path.split("?")[0] == "/api/upload":
+            return self.upload()
         if self.path.startswith("/api/"):
             return self._api("POST")
         self.send_error(404)
+
+    def upload(self):
+        size = int(self.headers.get("Content-Length") or 0)
+        if size <= 0 or size > MAX_UPLOAD:
+            return self._json({"error": f"file must be 1 byte to {MAX_UPLOAD // 1048576}MB"}, 413)
+
+        name = safe_filename(self.headers.get("X-Filename"))
+        os.makedirs(INBOX, exist_ok=True)
+        target = os.path.join(INBOX, name)
+        if os.path.exists(target):
+            stem, ext = os.path.splitext(name)
+            name = f"{stem}-{time.strftime('%H%M%S')}{ext}"
+            target = os.path.join(INBOX, name)
+
+        # Write to a temp name first and rename into place: the sandbox
+        # watches this directory, and a half-written file appearing there
+        # would be picked up as complete.
+        tmp = target + ".part"
+        remaining = size
+        with open(tmp, "wb") as out:
+            while remaining > 0:
+                chunk = self.rfile.read(min(65536, remaining))
+                if not chunk:
+                    break
+                out.write(chunk)
+                remaining -= len(chunk)
+        if remaining > 0:
+            os.unlink(tmp)
+            return self._json({"error": "upload cut short"}, 400)
+        os.rename(tmp, target)
+
+        ledger.record(ledger.ALLOW, "file.in", name, actor="guru",
+                      detail=f"{size} bytes dropped from the host")
+        return self._json({"name": name, "bytes": size})
 
     def _api(self, method):
         route = self.path.split("?")[0][len("/api/"):].strip("/")
@@ -60,6 +118,13 @@ class Handler(SimpleHTTPRequestHandler):
         if route == "status":
             return {"vm": vm.status(), "ledger": ledger.summary(),
                     "snapshots": vm.snapshots() if vm.status()["state"] != "absent" else []}
+        if route == "inbox":
+            try:
+                waiting = sorted(f for f in os.listdir(INBOX)
+                                 if not f.startswith(".") and not f.endswith(".part"))
+            except OSError:
+                waiting = []
+            return {"waiting": waiting}
         if route == "ledger":
             return {"entries": ledger.read(limit=int(body.get("limit", 300)))}
 

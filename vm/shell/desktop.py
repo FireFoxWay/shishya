@@ -17,7 +17,7 @@ a canvas would be invisible to the thing that has to learn from it.
     python3 desktop.py
 """
 
-import os
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -43,14 +43,13 @@ APPS = Path(__file__).resolve().parent
 # more thing competing with the app the clone is driving.
 
 CSS = b"""
-.desktop        { background-color: #10151c; }
 .wall-title     { color: #6f7d8c; font-size: 11px; letter-spacing: 2px; }
 
 .icon-btn       { background: transparent; border: 1px solid transparent;
                   border-radius: 4px; padding: 10px 6px; }
 .icon-btn:hover { background: rgba(255,255,255,.07);
                   border-color: rgba(255,255,255,.14); }
-.icon-btn:focus { background: rgba(0,120,212,.28); border-color: #0078d4; }
+.icon-btn:focus { background: rgba(255,255,255,.18); }
 .icon-label     { color: #e6ebf1; font-size: 12px; }
 
 .taskbar        { background-color: #0b0f14; border-top: 1px solid #1e2833; }
@@ -61,7 +60,7 @@ CSS = b"""
 .power:hover    { background-color: #c42b1c; color: #ffffff; }
 
 .task           { background: rgba(255,255,255,.05); border: none;
-                  border-bottom: 2px solid #0078d4; border-radius: 0;
+                  border-radius: 0;
                   padding: 0 14px; color: #dbe3ea; font-size: 12px; }
 .task:hover     { background: rgba(255,255,255,.10); }
 
@@ -69,11 +68,23 @@ CSS = b"""
 
 .pill           { border-radius: 3px; padding: 3px 10px; font-size: 10px; }
 .pill-idle      { background: #1e2833; color: #8b98a5; }
-.pill-working   { background: #0078d4; color: #ffffff; }
+.pill-working   { color: #ffffff; }
 .pill-wheel     { background: #2f7a55; color: #ffffff; }
 /* Amber, not red: needing a person is normal, not a failure. */
 .pill-needs     { background: #b3720a; color: #ffffff; }
 """
+
+
+CONFIG = SHARED / ".desktop.json"
+LOOK = {"wallpaper": "#10151c", "accent": "#0078d4", "icon_size": 96,
+        "wallmark": "SHISHYA SANDBOX"}
+
+
+def read_look():
+    try:
+        return {**LOOK, **json.loads(CONFIG.read_text())}
+    except (OSError, json.JSONDecodeError):
+        return dict(LOOK)
 
 
 def screen_size():
@@ -90,6 +101,22 @@ def style():
     p.load_from_data(CSS)
     Gtk.StyleContext.add_provider_for_screen(
         Gdk.Screen.get_default(), p, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+    return p
+
+
+# A second provider, above the first, holding only what Settings controls.
+# Reloading this one repaints the desktop without touching the base sheet and
+# without restarting the shell — which would close whatever the clone had open.
+THEME = Gtk.CssProvider()
+
+
+def apply_look(look):
+    THEME.load_from_data(f"""
+        .desktop      {{ background-color: {look['wallpaper']}; }}
+        .task         {{ border-bottom: 2px solid {look['accent']}; }}
+        .pill-working {{ background: {look['accent']}; }}
+        .icon-btn:focus {{ background: {look['accent']}; }}
+    """.encode())
 
 
 # ─── what sits on the desktop ───────────────────────────────────────────────
@@ -99,11 +126,14 @@ def style():
 # described in a status panel.
 
 ICONS = [
-    ("Work",          "folder-documents",   lambda: files(WORK)),
-    ("Shishya",       "system-run",         lambda: app("shishya_app.py")),
-    ("Training Data", "emblem-documents",   lambda: app("training_app.py")),
-    ("Lessons",       "folder-templates",   lambda: files(LESSONS)),
-    ("Activity",      "text-x-generic",     lambda: app("activity_app.py")),
+    ("Work",             "folder-documents",  lambda: files(WORK)),
+    ("Inbox",            "mail-message-new",  lambda: app("inbox_app.py")),
+    ("Shishya",          "system-run",        lambda: app("shishya_app.py")),
+    ("Training Data",    "emblem-documents",  lambda: app("training_app.py")),
+    ("Make a Document",  "x-office-document", lambda: app("make_app.py")),
+    ("Lessons",          "folder-templates",  lambda: files(LESSONS)),
+    ("Activity",         "text-x-generic",    lambda: app("activity_app.py")),
+    ("Settings",         "preferences-system", lambda: app("settings_app.py")),
 ]
 
 
@@ -146,6 +176,9 @@ class Desktop(Gtk.Window):
         self.set_default_size(*screen_size())
         self.connect("destroy", Gtk.main_quit)
 
+        # Built before the icon loop, which fills it.
+        self.boxes = []
+
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.add(outer)
 
@@ -161,10 +194,14 @@ class Desktop(Gtk.Window):
             grid.add(self._icon(label, icon, action))
         outer.pack_start(grid, True, True, 0)
 
-        tag = Gtk.Label(label="SHISHYA SANDBOX", halign=Gtk.Align.END,
-                        margin=18)
-        tag.get_style_context().add_class("wall-title")
-        outer.pack_end(tag, False, False, 0)
+        self.tag = Gtk.Label(halign=Gtk.Align.END, margin=18)
+        self.tag.get_style_context().add_class("wall-title")
+        outer.pack_end(self.tag, False, False, 0)
+
+    def relabel(self, look):
+        self.tag.set_text(look["wallmark"])
+        for box in self.boxes:
+            box.set_size_request(look["icon_size"], -1)
 
     def _icon(self, label, icon_name, action):
         btn = Gtk.Button(relief=Gtk.ReliefStyle.NONE)
@@ -176,6 +213,7 @@ class Desktop(Gtk.Window):
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         box.set_size_request(96, -1)
+        self.boxes.append(box)
         box.pack_start(Gtk.Image.new_from_icon_name(icon_name, Gtk.IconSize.DIALOG),
                        False, False, 0)
         text = Gtk.Label(label=label)
@@ -328,9 +366,28 @@ def ellipsis(text, n):
 def main():
     for d in (WORK, LESSONS, TRAINING):
         d.mkdir(parents=True, exist_ok=True)
-    style()
-    Desktop().show_all()
+    provider = style()
+    Gtk.StyleContext.add_provider_for_screen(
+        Gdk.Screen.get_default(), THEME, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1)
+
+    desktop = Desktop()
+    desktop.show_all()
     Taskbar().show_all()
+
+    # Poll rather than watch the file: an inotify watch dies when the file is
+    # replaced by a rename, which is exactly how Settings writes it.
+    state = {}
+
+    def follow():
+        look = read_look()
+        if look != state.get("look"):
+            state["look"] = look
+            apply_look(look)
+            desktop.relabel(look)
+        return True
+
+    follow()
+    GLib.timeout_add_seconds(1, follow)
     Gtk.main()
 
 

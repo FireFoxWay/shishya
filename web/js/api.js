@@ -13,7 +13,23 @@ async function call(route, body) {
   return data;
 }
 
+/* Raw bytes rather than FormData: the host server is stdlib-only and parsing
+   multipart by hand is a lot of surface for no gain when one file per request
+   does the job. The name rides in a header. */
+async function upload(file) {
+  const res = await fetch("/api/upload", {
+    method: "POST",
+    headers: { "X-Filename": encodeURIComponent(file.name), "Content-Type": "application/octet-stream" },
+    body: file,
+  });
+  const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+  if (data.error) throw new Error(data.error);
+  return data;
+}
+
 export const api = {
+  upload,
+  inbox:    ()      => call("inbox"),
   status:   ()      => call("status"),
   ledger:   ()      => call("ledger"),
   create:   ()      => call("vm/create",   {}),
