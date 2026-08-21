@@ -28,7 +28,10 @@ PLACES = [
     ("Lessons",       common.TRACES,   "folder-templates"),
 ]
 
-OFFICE = {".xlsx", ".docx", ".pptx", ".ods", ".odt", ".odp", ".doc", ".xls", ".ppt", ".csv"}
+# Spreadsheets go to our own Sheets app — instant, and it never fails to
+# appear. Everything else still goes to LibreOffice.
+SHEETS = {".xlsx", ".xlsm", ".csv"}
+OFFICE = {".docx", ".pptx", ".ods", ".odt", ".odp", ".doc", ".xls", ".ppt"}
 TEXTY = {".txt", ".md", ".json", ".log", ".csv", ".tsv", ".xml", ".html", ".py", ".jsonl"}
 
 
@@ -188,7 +191,11 @@ class FilesApp(Gtk.Window):
             return self.go(path)
 
         suffix = path.suffix.lower()
-        if suffix in OFFICE:
+        if suffix in SHEETS:
+            self.launch([sys.executable,
+                         str(Path(__file__).resolve().parent / "sheet_app.py"),
+                         str(path)], path)
+        elif suffix in OFFICE:
             self.launch(["libreoffice", str(path)], path)
         elif suffix == ".pdf":
             self.launch(["evince", str(path)], path)

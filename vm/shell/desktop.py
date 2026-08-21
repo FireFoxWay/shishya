@@ -132,6 +132,7 @@ ICONS = [
     ("Shishya",          "system-run",        lambda: app("shishya_app.py")),
     ("Training Data",    "emblem-documents",  lambda: app("training_app.py")),
     ("Make a Document",  "x-office-document", lambda: app("make_app.py")),
+    ("Sheets",           "x-office-spreadsheet", lambda: app("sheet_app.py")),
     ("Lessons",          "folder-templates",  lambda: files(LESSONS)),
     ("Activity",         "text-x-generic",    lambda: app("activity_app.py")),
     ("Settings",         "preferences-system", lambda: app("settings_app.py")),
