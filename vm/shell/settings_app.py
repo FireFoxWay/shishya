@@ -25,6 +25,7 @@ DEFAULTS = {"wallpaper": "#10151c", "accent": "#0078d4", "icon_size": 96,
 # Named rather than a raw colour wheel: these read as choices someone made,
 # and any of them stays legible behind white icon labels.
 WALLPAPERS = [
+    ("Galaxy",    "galaxy"),
     ("Slate",     "#10151c"),
     ("Indigo",    "#141a2e"),
     ("Forest",    "#101c17"),
@@ -111,6 +112,16 @@ class SettingsApp(Gtk.Window):
 
     @staticmethod
     def paint(area, cr, colour):
+        # The live wallpaper has no single colour, so its swatch is a tiny
+        # rendering of the thing itself rather than a stand-in shade.
+        if colour == "galaxy":
+            import galaxy as g
+            preview = getattr(SettingsApp, "_preview", None)
+            if preview is None:
+                preview = SettingsApp._preview = g.Galaxy()
+            alloc = area.get_allocation()
+            preview.draw(cr, alloc.width, alloc.height)
+            return
         rgba = Gdk.RGBA()
         rgba.parse(colour)
         cr.set_source_rgb(rgba.red, rgba.green, rgba.blue)

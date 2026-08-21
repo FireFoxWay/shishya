@@ -111,7 +111,7 @@ THEME = Gtk.CssProvider()
 
 def apply_look(look):
     THEME.load_from_data(f"""
-        .desktop      {{ background-color: {look['wallpaper']}; }}
+        .desktop      {{ background-color: {look['wallpaper'] if look['wallpaper'].startswith('#') else '#04060d'}; }}
         .task         {{ border-bottom: 2px solid {look['accent']}; }}
         .pill-working {{ background: {look['accent']}; }}
         .icon-btn:focus {{ background: {look['accent']}; }}
@@ -206,8 +206,21 @@ class Desktop(Gtk.Window):
         # Built before the icon loop, which fills it.
         self.boxes = []
 
+        # The wallpaper is a drawing surface with the icons floating over it,
+        # so a live background costs nothing when it is switched off — the
+        # overlay simply has an empty child underneath.
+        self.stack = Gtk.Overlay()
+        self.add(self.stack)
+
+        self.canvas = Gtk.DrawingArea()
+        self.canvas.connect("draw", self.on_draw)
+        self.stack.add(self.canvas)
+
+        self.galaxy = None
+        self.ticker = None
+
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        self.add(outer)
+        self.stack.add_overlay(outer)
         outer.set_margin_bottom(TASKBAR_H)
 
         # Nothing on the desktop. Everything lives behind the launcher, so the
@@ -218,7 +231,41 @@ class Desktop(Gtk.Window):
         outer.pack_end(self.tag, False, False, 0)
         self.boxes = []
 
+    def on_draw(self, _area, cr):
+        if self.galaxy is None:
+            return False
+        alloc = self.canvas.get_allocation()
+        self.galaxy.draw(cr, alloc.width, alloc.height)
+        return True
+
+    def set_live(self, on):
+        """Start or stop the animated wallpaper.
+
+        Stopped means stopped: the timer is removed rather than left running
+        against a hidden surface. The clone is doing real work on four cores
+        and the desktop must not take a slice of it for a background nobody
+        is looking at.
+        """
+        if on and self.galaxy is None:
+            import galaxy
+            self.galaxy = galaxy.Galaxy()
+            self.ticker = GLib.timeout_add(int(1000 / galaxy.FPS), self._tick)
+        elif not on and self.galaxy is not None:
+            if self.ticker:
+                GLib.source_remove(self.ticker)
+            self.ticker = None
+            self.galaxy = None
+            self.canvas.queue_draw()
+
+    def _tick(self):
+        if self.galaxy is None:
+            return False
+        self.galaxy.step()
+        self.canvas.queue_draw()
+        return True
+
     def relabel(self, look):
+        self.set_live(look.get("wallpaper") == "galaxy")
         self.tag.set_text(look["wallmark"])
 
 
