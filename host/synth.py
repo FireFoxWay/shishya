@@ -96,7 +96,7 @@ SCHEMA = {
 }
 
 
-def ask(prompt, model=DEFAULT_MODEL, temperature=0.2):
+def ask(prompt, model=DEFAULT_MODEL, temperature=0):
     assert_local(model)
     body = json.dumps({
         "model": model,
@@ -109,10 +109,17 @@ def ask(prompt, model=DEFAULT_MODEL, temperature=0.2):
         # one step instead of seven. The reasoning buys us nothing here; the
         # trace has already done the hard part.
         "think": False,
-        # Low temperature: we want the same demonstration to yield the same
+        # Zero, not low. The same demonstration produced a good procedure on
+        # one run and an abstracted one on the next; a lesson that depends on
+        # which way the sampling fell is not one anyone can rely on.
+        # We want the same demonstration to yield the same
         # procedure. A teacher who explains it differently every time is
         # not a teacher you can correct.
-        "options": {"temperature": temperature, "num_ctx": 8192,
+        # A fixed seed as well as zero temperature. Temperature alone still
+        # left the sampler free to diverge, and the same lesson came back
+        # differently on consecutive runs — which is indefensible for
+        # something whose whole promise is "this is what I learned".
+        "options": {"temperature": temperature, "seed": 7, "num_ctx": 8192,
                     "num_predict": 4096},
     }).encode()
     req = urllib.request.Request(f"{OLLAMA}/api/generate", body,
