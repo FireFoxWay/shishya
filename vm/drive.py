@@ -150,7 +150,8 @@ def read_chat(timeout=420):
             walk(app)
 
         working = newest.startswith(("Thinking about", "Let me check", "I'll ", "I will ",
-                                     "That needs counting"))
+                                     "That needs counting", "The program hit an error",
+                                     "I am ", "I'm "))
         if newest and newest == last and not working:
             stable += 1
             if stable >= 2:

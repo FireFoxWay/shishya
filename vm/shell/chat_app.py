@@ -302,36 +302,52 @@ class ChatApp(Gtk.Window):
                 f"Built from: {', '.join(sorted({s.split(' — ')[0] for s, _ in found}))}")
 
     def by_code(self, brief):
-        """Counting, totalling and filtering go through a program.
+        """Counting, totalling and ranking go through a program.
 
         The model is unreliable doing arithmetic across rows by eye — it
         misses rows and occasionally invents a figure. Code that reads the
         file is exact, and the code is on screen to be checked.
+
+        It gets one attempt to fix its own mistakes. The slips are the kind a
+        person makes and spots instantly: `idxmin` written without its
+        brackets, so pandas was handed the method instead of the number and
+        died with an unhashable DataFrame. The reasoning was right and one
+        character was wrong. Showing it the traceback is what a person would
+        do, and it is far more likely to work than any amount of instruction
+        about brackets in advance.
         """
         listing = describe_material()
-        code = repair_paths(strip_fences(common.ask(
+        code = repair(common.ask(
             f"{listing}\n\nWrite a Python script that: {brief}",
-            system=CODE_SYSTEM, budget=6144)))
-        if not code.strip() or code.lstrip().startswith("I ran out of room"):
+            system=CODE_SYSTEM, budget=6144))
+        if not usable(code):
             return "I couldn't write a program for that. Try narrowing it down."
 
-        with tempfile.TemporaryDirectory() as tmp:
-            script = Path(tmp) / "job.py"
-            script.write_text(code)
-            try:
-                p = subprocess.run([sys.executable, str(script)],
-                                   capture_output=True, text=True,
-                                   timeout=RUN_TIMEOUT, cwd=str(Path.home()))
-                out = (p.stdout or "").strip()
-                err = (p.stderr or "").strip()
-            except subprocess.TimeoutExpired:
-                out, err = "", f"it was still running after {RUN_TIMEOUT}s"
+        out, err = run_script(code)
+        attempts = 1
+
+        if err and not out:
+            GLib.idle_add(self.update,
+                          "The program hit an error — reading it and trying again.")
+            fixed = repair(common.ask(
+                f"{listing}\n\nThis script was meant to: {brief}\n\n"
+                f"It failed. Here it is:\n\n{code}\n\n"
+                f"The error:\n{err[-1500:]}\n\n"
+                f"Return the corrected script, complete, and nothing else.",
+                system=CODE_SYSTEM, budget=6144))
+            if usable(fixed):
+                out2, err2 = run_script(fixed)
+                attempts = 2
+                if out2:
+                    code, out, err = fixed, out2, err2
 
         self.history.append(f"computed: {brief}")
+        note = "" if attempts == 1 else "\n(the first attempt failed; this is the corrected one)"
+
         if err and not out:
-            return (f"I wrote a program and it failed:\n\n{code}\n\n{err}")
+            return (f"I wrote a program twice and it still failed:\n\n{code}\n\n{err}")
         return (f"I worked it out with a program:\n\n{out}\n\n"
-                f"— here is what I ran, so you can check it —\n\n{code}")
+                f"— here is what I ran, so you can check it —{note}\n\n{code}")
 
     # ── finishing ───────────────────────────────────────────────────────────
 
@@ -348,6 +364,42 @@ class ChatApp(Gtk.Window):
         return False
 
 
+def sheet_shape(path, max_rows=400):
+    """Column names, and the values a short column actually contains.
+
+    Names alone are not enough. Told the column was called "Stock Status",
+    the model filtered for "Low" when every row says "Low Stock", and
+    reported that nothing was low on stock across a sheet with 149 such
+    rows — wrong, confident, and impossible to spot without opening the file.
+    Columns with few distinct values get those values listed; a column of
+    1,000 different prices obviously does not.
+    """
+    from openpyxl import load_workbook
+    wb = load_workbook(path, read_only=True, data_only=True)
+    ws = wb.worksheets[0]
+    rows = ws.iter_rows(values_only=True)
+    try:
+        header = [str(c) for c in next(rows) if c is not None]
+    except StopIteration:
+        wb.close()
+        return None
+
+    seen = [set() for _ in header]
+    for n, row in enumerate(rows):
+        if n >= max_rows:
+            break
+        for i, cell in enumerate(row[:len(header)]):
+            if cell is not None and len(seen[i]) <= 13:
+                seen[i].add(str(cell))
+    wb.close()
+
+    out = [f"      columns: {', '.join(header)}"]
+    for name, values in zip(header, seen):
+        if 1 < len(values) <= 12:
+            out.append(f"      {name} contains only: {', '.join(sorted(values))}")
+    return "\n".join(out)
+
+
 def describe_material():
     lines = []
     for p in sorted(common.TRAINING.iterdir())[:8]:
@@ -356,16 +408,63 @@ def describe_material():
         entry = f"  {common.TRAINING}/{p.name}"
         if p.suffix.lower() in (".xlsx", ".xlsm"):
             try:
-                from openpyxl import load_workbook
-                wb = load_workbook(p, read_only=True)
-                row = next(wb.worksheets[0].iter_rows(max_row=1, values_only=True))
-                entry += f"\n      columns: {', '.join(str(c) for c in row if c)}"
-                wb.close()
+                shape = sheet_shape(p)
+                if shape:
+                    entry += "\n" + shape
             except Exception:
                 pass
         lines.append(entry)
     return ("These files exist — use these exact paths and column names:\n"
             + "\n".join(lines)) if lines else "There are no files yet."
+
+
+def repair(raw):
+    """Everything we fix about generated code, in one place."""
+    return repair_calls(repair_paths(strip_fences(raw)))
+
+
+def usable(code):
+    """Is this a script, or the model's apology?"""
+    return bool(code.strip()) and not code.lstrip().startswith(
+        ("I ran out of room", "I thought my way", "I couldn't"))
+
+
+def run_script(code):
+    """Run it in the sandbox and return what it said. Errors come back whole —
+    the traceback is the useful part when the model has to read it back."""
+    with tempfile.TemporaryDirectory() as tmp:
+        script = Path(tmp) / "job.py"
+        script.write_text(code)
+        try:
+            p = subprocess.run([sys.executable, str(script)],
+                               capture_output=True, text=True,
+                               timeout=RUN_TIMEOUT, cwd=str(Path.home()))
+            return (p.stdout or "").strip(), (p.stderr or "").strip()
+        except subprocess.TimeoutExpired:
+            return "", f"it was still running after {RUN_TIMEOUT}s"
+
+
+# Methods this model writes without their brackets. Shown the traceback it
+# made the identical slip a second time, so this is repaired mechanically
+# rather than explained again: `df.loc[df['x'].idxmin]` hands pandas the
+# method instead of the number and dies with "unhashable type: DataFrame".
+#
+# Only methods. Properties — size, shape, values, empty, columns, index,
+# dtypes, T — are correct without brackets and adding them would break code
+# that was already right.
+NEEDS_BRACKETS = (
+    "idxmin", "idxmax", "mean", "median", "nunique", "unique", "tolist",
+    "to_dict", "dropna", "drop_duplicates", "reset_index", "value_counts",
+    "sort_values", "sort_index", "count", "sum", "min", "max", "abs",
+    "round", "first_valid_index", "last_valid_index", "keys", "item",
+)
+
+
+def repair_calls(code):
+    """Add the brackets the model left off a method call."""
+    import re
+    pattern = r"\.(" + "|".join(NEEDS_BRACKETS) + r")\b(?!\s*[\(\w=])"
+    return re.sub(pattern, r".\1()", code)
 
 
 def repair_paths(code):

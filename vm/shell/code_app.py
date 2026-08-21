@@ -285,6 +285,42 @@ class CodeApp(Gtk.Window):
         self.out.get_buffer().set_text(text)
 
 
+def sheet_shape(path, max_rows=400):
+    """Column names, and the values a short column actually contains.
+
+    Names alone are not enough. Told the column was called "Stock Status",
+    the model filtered for "Low" when every row says "Low Stock", and
+    reported that nothing was low on stock across a sheet with 149 such
+    rows — wrong, confident, and impossible to spot without opening the file.
+    Columns with few distinct values get those values listed; a column of
+    1,000 different prices obviously does not.
+    """
+    from openpyxl import load_workbook
+    wb = load_workbook(path, read_only=True, data_only=True)
+    ws = wb.worksheets[0]
+    rows = ws.iter_rows(values_only=True)
+    try:
+        header = [str(c) for c in next(rows) if c is not None]
+    except StopIteration:
+        wb.close()
+        return None
+
+    seen = [set() for _ in header]
+    for n, row in enumerate(rows):
+        if n >= max_rows:
+            break
+        for i, cell in enumerate(row[:len(header)]):
+            if cell is not None and len(seen[i]) <= 13:
+                seen[i].add(str(cell))
+    wb.close()
+
+    out = [f"      columns: {', '.join(header)}"]
+    for name, values in zip(header, seen):
+        if 1 < len(values) <= 12:
+            out.append(f"      {name} contains only: {', '.join(sorted(values))}")
+    return "\n".join(out)
+
+
 def describe_files():
     """Tell the model what is actually on disk before it writes anything.
 
@@ -306,9 +342,12 @@ def describe_files():
             if not p.is_file() or p.name.startswith("."):
                 continue
             entry = f"  ~/{label}/{p.name}"
-            head = _headers(p)
-            if head:
-                entry += f"\n      columns: {head}"
+            try:
+                shape = sheet_shape(p)
+                if shape:
+                    entry += "\n" + shape
+            except Exception:
+                pass
             lines.append(entry)
     if not lines:
         return "There are no files in the sandbox yet."
