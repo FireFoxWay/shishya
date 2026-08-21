@@ -48,7 +48,9 @@ check() {
   [ "$web" -le 2 ] && ok "$web websockify" || { bad "$web websockify processes — input will be dead"; fails=1; }
 
   local desks
-  desks=$(inguest pgrep -u clone -cf "python3 desktop.py" || echo 0)
+  # The service runs it by absolute path, so match the filename only.
+  desks=$(inguest pgrep -u clone -cf "desktop.py" | head -1)
+  desks=${desks:-0}
   [ "$desks" = "1" ] && ok "one desktop" \
     || { bad "$desks desktops (want 1)"; fails=1; }
 
