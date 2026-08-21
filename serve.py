@@ -116,8 +116,17 @@ class Handler(SimpleHTTPRequestHandler):
     def route(self, method, route, body):
         # ── read ──
         if route == "status":
-            return {"vm": vm.status(), "ledger": ledger.summary(),
-                    "snapshots": vm.snapshots() if vm.status()["state"] != "absent" else []}
+            state = vm.status()
+            live = state.get("state") == "running"
+            return {
+                "vm": state,
+                "ledger": ledger.summary(),
+                "snapshots": vm.snapshots() if state["state"] != "absent" else [],
+                # Measured, never assumed. Unknown when the VM is down, because
+                # "locked" would be a claim we cannot support.
+                "egress": vm.egress_state() if live else {"locked": None,
+                                                          "detail": "sandbox is not running"},
+            }
         if route == "inbox":
             try:
                 waiting = sorted(f for f in os.listdir(INBOX)

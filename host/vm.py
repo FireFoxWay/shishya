@@ -145,6 +145,29 @@ HOST_IP = "192.168.5.2"
 OLLAMA_PORT = 11434
 
 
+def egress_state():
+    """What the lock actually is, right now — asked of the guest, not
+    remembered from the last time we set it.
+
+    The panel used to display LOCKED because a variable said so. On a project
+    whose entire claim is that you can verify what happened, an indicator
+    reporting a state it never checked is the worst possible bug: it is the
+    one thing a judge might actually test.
+    """
+    p = subprocess.run(
+        ["limactl", "shell", "--workdir", "/", NAME, "--", "sudo", "nft", "list", "table", "inet", "shishya"],
+        capture_output=True, text=True, timeout=30)
+    if p.returncode != 0:
+        # No such table means no rules, which means nothing is being blocked.
+        return {"locked": False, "detail": "no egress rules are loaded"}
+    locked = "policy drop" in p.stdout
+    return {
+        "locked": locked,
+        "detail": ("all outbound traffic dropped except the host's model"
+                   if locked else "rules present but not dropping"),
+    }
+
+
 def egress(locked: bool):
     if locked:
         script = f"""
@@ -163,7 +186,8 @@ def egress(locked: bool):
     )
     if p.returncode != 0:
         raise VMError(p.stderr.strip())
-    return {"locked": locked}
+    # Report what the guest now says, not what we asked for.
+    return egress_state()
 
 
 if __name__ == "__main__":

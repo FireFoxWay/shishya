@@ -10,7 +10,7 @@ import { api } from "./api.js";
 const $ = id => document.getElementById(id);
 const VERDICT_CLASS = { allow: "ok", deny: "no", info: "" };
 
-let netLocked = true;
+let netLocked = null;      // unknown until the sandbox is asked
 let wheel = false;          // are we driving, or just watching?
 
 /* ─── logging ────────────────────────────────────────────────────────────── */
@@ -63,6 +63,19 @@ function paintLedger(entries) {
 }
 
 function paintStatus(s) {
+  /* Egress comes from the sandbox's own firewall, not from a variable we set
+     when we last pressed the button. An indicator that reports a state it
+     never checked is worse than no indicator on a panel whose whole promise
+     is that you can verify what happened. */
+  const e = s.egress ?? {};
+  netLocked = e.locked;
+  const pill = $("netState");
+  pill.textContent = e.locked === true ? "LOCKED"
+                   : e.locked === false ? "OPEN" : "UNKNOWN";
+  pill.className = e.locked === true ? "locked" : e.locked === false ? "open" : "no";
+  pill.title = e.detail ?? "";
+  $("btnNet").textContent = e.locked === true ? "UNLOCK NET" : "LOCK NET";
+
   const state = s.vm?.state ?? "unknown";
   $("vmState").textContent = state.toUpperCase();
   $("vmState").className = state === "running" ? "ok" : "no";
@@ -72,6 +85,15 @@ function paintStatus(s) {
   const live = state === "running";
   $("screenMsg").style.display = live ? "none" : "grid";
   $("screenMsg").textContent = live ? "" : `sandbox ${state}`;
+
+  // Three states, not two: unknown is its own answer when the sandbox is down.
+  const eg = s.egress ?? {};
+  netLocked = eg.locked;
+  const label = netLocked === true ? "LOCKED" : netLocked === false ? "OPEN" : "UNKNOWN";
+  $("netState").textContent = label;
+  $("netState").className = netLocked === true ? "locked" : netLocked === false ? "open" : "";
+  $("netState").title = eg.detail ?? "";
+  $("btnNet").textContent = netLocked === true ? "UNLOCK NET" : "LOCK NET";
 }
 
 async function refresh() {
@@ -114,14 +136,10 @@ $("btnRoll").onclick = e => {
   guard(e.target, "rollback", () => api.rollback("clean"));
 };
 
-$("btnNet").onclick = e => guard(e.target, "egress", async () => {
-  const out = await api.egress(!netLocked ? true : false);
-  netLocked = out.locked;
-  $("netState").textContent = netLocked ? "LOCKED" : "OPEN";
-  $("netState").className = netLocked ? "locked" : "open";
-  $("btnNet").textContent = netLocked ? "UNLOCK NET" : "LOCK NET";
-  return out;
-});
+$("btnNet").onclick = e => guard(e.target, "egress",
+  /* Ask for the opposite of what the sandbox actually reports. When the state
+     is unknown, locking is the safe direction to move in. */
+  () => api.egress(netLocked !== true));
 
 /* ─── sending files to the clone ─────────────────────────────────────────── */
 
