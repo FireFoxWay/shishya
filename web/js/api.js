@@ -33,6 +33,7 @@ export const api = {
   launch:   (app)   => call("launch", { app }),
   fixInput: ()      => call("vm/fix-input", {}),
   close:    (app)   => call("close", app ? { app } : {}),
+  sources:  ()      => call("sources", {}),
   ask:      (text)  => call("ask", { text }),
   answer:   ()      => call("answer", {}),
   status:   ()      => call("status"),

@@ -233,6 +233,14 @@ async function askClone() {
 $("btnAsk").onclick = askClone;
 $("askBox").addEventListener("keydown", e => { if (e.key === "Enter") askClone(); });
 
+$("btnSources").onclick = e => guard(e.target, "use as sources", async () => {
+  const out = await api.sources();
+  log(out.added.length
+        ? `now reading: ${out.added.join(", ")}`
+        : "nothing waiting in the inbox", out.added.length ? "ok" : "");
+  return out;
+});
+
 $("btnCloseAll").onclick = e =>
   guard(e.target, "close apps", () => api.close());
 

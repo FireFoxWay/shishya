@@ -102,6 +102,28 @@ def launch_app(name):
     return {"launched": name}
 
 
+SHARED = Path(__file__).resolve().parent.parent / "shared"
+
+
+def use_as_sources():
+    """Move everything waiting in the inbox into the material folder.
+
+    Dropping a file on the panel puts it in the inbox, which is deliberately
+    a holding area — nothing there is read until somebody says so. This is
+    that decision, made from outside the sandbox so it works when clicking
+    inside it does not. The chat notices the folder changed and reads them.
+    """
+    inbox, training = SHARED / "inbox", SHARED / "training"
+    training.mkdir(parents=True, exist_ok=True)
+    moved = []
+    if inbox.exists():
+        for p in sorted(inbox.iterdir()):
+            if p.is_file() and not p.name.startswith(".") and p.suffix != ".part":
+                p.replace(training / p.name)
+                moved.append(p.name)
+    return {"added": moved}
+
+
 def close_apps(name=None):
     """Close one app, or all of them, from outside the sandbox.
 

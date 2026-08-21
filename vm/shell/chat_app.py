@@ -23,6 +23,7 @@ somebody who matters.
 """
 
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -32,8 +33,9 @@ from pathlib import Path
 
 import gi
 gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
 gi.require_version("Pango", "1.0")
-from gi.repository import GLib, Gtk, Pango   # noqa: E402
+from gi.repository import Gdk, GLib, Gtk, Pango   # noqa: E402
 
 import common          # noqa: E402
 import make_app        # noqa: E402
@@ -106,8 +108,13 @@ class ChatApp(Gtk.Window):
         self.subtitle = Gtk.Label(xalign=0)
         self.subtitle.set_opacity(.65)
         bar.pack_start(self.subtitle, True, True, 0)
-        reload_btn = Gtk.Button(label="Reread material")
-        reload_btn.get_accessible().set_name("Reread material")
+        add = Gtk.Button(label="Add sources")
+        add.get_accessible().set_name("Add sources")
+        add.connect("clicked", self.on_add_sources)
+        bar.pack_end(add, False, False, 0)
+
+        reload_btn = Gtk.Button(label="Reread")
+        reload_btn.get_accessible().set_name("Reread")
         reload_btn.connect("clicked", lambda _b: self.read_material())
         bar.pack_end(reload_btn, False, False, 0)
         root.pack_start(bar, False, False, 0)
@@ -134,6 +141,18 @@ class ChatApp(Gtk.Window):
         row.pack_end(self.send, False, False, 0)
         root.pack_start(row, False, False, 0)
 
+        # Drop on the whole window rather than a strip: people aim at the
+        # conversation, and a target two pixels wide reads as broken.
+        self.drag_dest_set(Gtk.DestDefaults.ALL, [], Gdk.DragAction.COPY)
+        self.drag_dest_add_uri_targets()
+        self.connect("drag-data-received", self.on_drop)
+
+        # Files also arrive from the control panel, so the folder is watched
+        # rather than waiting to be told. Whoever put the file there should
+        # not have to remember to announce it.
+        self._seen = self.material_fingerprint()
+        GLib.timeout_add_seconds(3, self.watch_material)
+
         self.read_material()
         self.say("shishya",
                  "I've read everything in your Training Data folder. Tell me what "
@@ -155,6 +174,69 @@ class ChatApp(Gtk.Window):
         self.subtitle.set_text(
             f"{len(names)} documents · {len(self.library.chunks)} pieces"
             if names else "no material yet — put files in Training Data")
+
+    def material_fingerprint(self):
+        try:
+            return {p.name: p.stat().st_mtime for p in common.TRAINING.iterdir()
+                    if p.is_file() and not p.name.startswith(".")}
+        except OSError:
+            return {}
+
+    def watch_material(self):
+        now = self.material_fingerprint()
+        if now != self._seen:
+            added = sorted(set(now) - set(self._seen))
+            self._seen = now
+            self.read_material()
+            if added:
+                self.say("shishya", self.describe_added(added))
+        return True
+
+    def describe_added(self, added):
+        names = ", ".join(added)
+        return (f"I've read {names}. That's {len(self.files)} documents now — "
+                f"ask me anything about them.")
+
+    def on_add_sources(self, _btn):
+        chooser = Gtk.FileChooserDialog(
+            title="Add sources", transient_for=self, action=Gtk.FileChooserAction.OPEN)
+        chooser.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Add", Gtk.ResponseType.OK)
+        chooser.set_select_multiple(True)
+        if chooser.run() == Gtk.ResponseType.OK:
+            self.take(chooser.get_filenames())
+        chooser.destroy()
+
+    def on_drop(self, _w, _ctx, _x, _y, data, _info, _time):
+        paths = []
+        for uri in data.get_uris():
+            p = uri[7:] if uri.startswith("file://") else uri
+            paths.append(GLib.uri_unescape_string(p, None) or p)
+        self.take(paths)
+
+    def take(self, paths):
+        """Copy files in and read them.
+
+        Copied rather than referenced: material has to sit inside the sandbox
+        for the clone to reach it at all, and a source that vanishes because
+        somebody moved the original is worse than one that takes a little
+        disk.
+        """
+        import shutil
+        common.TRAINING.mkdir(parents=True, exist_ok=True)
+        added = []
+        for raw in paths:
+            src = Path(raw)
+            if not src.is_file():
+                continue
+            target = common.TRAINING / src.name
+            if src.resolve() != target.resolve():
+                shutil.copy2(src, target)
+            added.append(src.name)
+        if not added:
+            return
+        self._seen = self.material_fingerprint()
+        self.read_material()
+        self.say("shishya", self.describe_added(added))
 
     # ── conversation view ───────────────────────────────────────────────────
 
@@ -379,10 +461,19 @@ def sheet_shape(path, max_rows=400):
     ws = wb.worksheets[0]
     rows = ws.iter_rows(values_only=True)
     try:
-        header = [str(c) for c in next(rows) if c is not None]
+        raw_header = [c for c in next(rows) if c is not None]
     except StopIteration:
         wb.close()
         return None
+    header = [str(c) for c in raw_header]
+
+    # Which headers are real dates rather than text. Printed as strings they
+    # look like text — "2025-04-01 00:00:00" — and the model kept writing
+    # .startswith('2025') against them, which fails with "datetime.datetime
+    # object has no attribute startswith". Four of eight test questions died
+    # on exactly that. Saying so plainly fixes all of them.
+    import datetime as _dt
+    dated = [str(c) for c in raw_header if isinstance(c, (_dt.datetime, _dt.date))]
 
     seen = [set() for _ in header]
     for n, row in enumerate(rows):
@@ -394,6 +485,37 @@ def sheet_shape(path, max_rows=400):
     wb.close()
 
     out = [f"      columns: {', '.join(header)}"]
+    if dated:
+        out.append(
+            f"      NOTE: {len(dated)} of those column headers are real datetime "
+            f"objects, not text — {dated[0]} through {dated[-1]}. Select them "
+            f"with [c for c in df.columns if isinstance(c, datetime)] after "
+            f"`from datetime import datetime`. String methods such as "
+            f"startswith or str.contains will raise on them. When filtering "
+            f"columns BY NAME, guard first — "
+            f"[c for c in df.columns if isinstance(c, str) and c.startswith(...)] "
+            f"— or the datetime headers will raise as soon as you reach them.")
+
+    # Describe repeated column families rather than listing them one by one.
+    # This sheet keeps suppliers wide — "Purchased From 1".."Purchased From 10"
+    # each paired with a "Purchase Qty N" and a "Net Purchase Price N". Left to
+    # infer that from a flat list of 54 names, the model wrote nothing at all
+    # when asked which suppliers we buy most from. Said plainly, it has a
+    # chance: the answer needs those pairs stacked before they can be grouped.
+    families = {}
+    for name in header:
+        stem = re.sub(r"\s*\d+$", "", name)
+        if stem != name:
+            families.setdefault(stem, []).append(name)
+    for stem, cols in families.items():
+        if len(cols) > 2:
+            out.append(f"      {stem} 1..{len(cols)} — one column per repeat")
+    if len(families) > 1 and any(len(c) > 2 for c in families.values()):
+        pairs = " and ".join(f'"{stem} N"' for stem in families if len(families[stem]) > 2)
+        out.append(f"      these repeat together: {pairs} share the same N, so "
+                   f"to total by value across them, stack the pairs first "
+                   f"(pd.concat of each N, or pd.wide_to_long) and then group")
+
     for name, values in zip(header, seen):
         if 1 < len(values) <= 12:
             out.append(f"      {name} contains only: {', '.join(sorted(values))}")

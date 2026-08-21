@@ -196,6 +196,13 @@ class Handler(SimpleHTTPRequestHandler):
             ledger.record(ledger.INFO, "vm.rollback", tag, actor="guru",
                           detail="everything the clone did since this tag is gone")
             return vm.rollback(tag)
+        if route == "sources":
+            out = vm.use_as_sources()
+            for name in out["added"]:
+                ledger.record(ledger.ALLOW, "source.add", name, actor="guru",
+                              detail="moved from inbox into the clone's material")
+            return out
+
         if route == "close":
             name = body.get("app")
             if name and name not in LAUNCHABLE:
