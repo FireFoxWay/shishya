@@ -76,7 +76,7 @@ CSS = b"""
 
 CONFIG = SHARED / ".desktop.json"
 LOOK = {"wallpaper": "#10151c", "accent": "#0078d4", "icon_size": 96,
-        "wallmark": "SHISHYA SANDBOX"}
+        "wallmark": "SHISHYA SANDBOX", "fps": 12}
 
 
 def read_look():
@@ -84,6 +84,19 @@ def read_look():
         return {**LOOK, **json.loads(CONFIG.read_text())}
     except (OSError, json.JSONDecodeError):
         return dict(LOOK)
+
+
+# The live wallpapers, by the name Settings writes into the config.
+LIVE = ("galaxy", "matrix")
+
+
+def make_wallpaper(name):
+    """Build a live wallpaper and report the rate it wants to run at."""
+    if name == "matrix":
+        import matrix
+        return matrix.Matrix(), matrix.FPS
+    import galaxy
+    return galaxy.Galaxy(), galaxy.FPS
 
 
 def screen_size():
@@ -145,6 +158,7 @@ MENU = [
     ("Work folder",       "folder-documents",     lambda: files(WORK)),
     ("Lessons",           "folder-templates",     lambda: files(LESSONS)),
     ("Activity",          "text-x-generic",       lambda: app("activity_app.py")),
+    ("System",            "utilities-system-monitor", lambda: app("system_app.py")),
     ("Models",            "applications-science", lambda: app("models_app.py")),
     ("Settings",          "preferences-system",   lambda: app("settings_app.py")),
 ]
@@ -219,6 +233,8 @@ class Desktop(Gtk.Window):
 
         self.galaxy = None
         self.ticker = None
+        self.live_name = None
+        self.fps = 0                     # 0 means "use the wallpaper's own rate"
 
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.stack.add_overlay(outer)
@@ -240,6 +256,15 @@ class Desktop(Gtk.Window):
         return True
 
     def set_live(self, on):
+        # `on` is the wallpaper's name — "galaxy", "matrix" — or a falsy value
+        # for a plain colour. Switching between two live ones means tearing
+        # the old one down first, or the new choice never takes.
+        if on and self.live_name != on:
+            self.set_live(None)
+            self.live_name = on
+        elif not on:
+            self.live_name = None
+        self.fps = 0                     # 0 means "use the wallpaper's own rate"
         """Start or stop the animated wallpaper.
 
         Stopped means stopped: the timer is removed rather than left running
@@ -248,9 +273,10 @@ class Desktop(Gtk.Window):
         is looking at.
         """
         if on and self.galaxy is None:
-            import galaxy
-            self.galaxy = galaxy.Galaxy()
-            self.ticker = GLib.timeout_add(int(1000 / galaxy.FPS), self._tick)
+            self.galaxy, fps = make_wallpaper(on)
+            # Parenthesised: `1000 / self.fps or fps` divides first and
+            # raises ZeroDivisionError when no rate has been chosen.
+            self.ticker = GLib.timeout_add(int(1000 / (self.fps or fps)), self._tick)
         elif not on and self.galaxy is not None:
             if self.ticker:
                 GLib.source_remove(self.ticker)
@@ -283,11 +309,21 @@ class Desktop(Gtk.Window):
             GLib.source_remove(self.ticker)
             self.ticker = None
         elif not busy and self.ticker is None:
-            import galaxy
-            self.ticker = GLib.timeout_add(int(1000 / galaxy.FPS), self._tick)
+            _, fps = make_wallpaper(self.live_name)
+            self.ticker = GLib.timeout_add(int(1000 / (self.fps or fps)), self._tick)
 
     def relabel(self, look):
-        self.set_live(look.get("wallpaper") == "galaxy")
+        # A changed frame rate has to tear the timer down and rebuild it;
+        # GLib timeouts cannot be re-timed in place.
+        wanted = int(look.get("fps", 0) or 0)
+        if wanted != self.fps:
+            self.fps = wanted
+            if self.live_name:
+                name = self.live_name
+                self.set_live(None)
+                self.set_live(name)
+        chosen = look.get("wallpaper", "")
+        self.set_live(chosen if chosen in LIVE else None)
         self.tag.set_text(look["wallmark"])
 
 

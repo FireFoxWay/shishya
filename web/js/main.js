@@ -193,6 +193,14 @@ for (const btn of document.querySelectorAll("#apps [data-app]")) {
                             () => api.launch(btn.dataset.app));
 }
 
+$("btnFix").onclick = e => guard(e.target, "rebuild display", async () => {
+  const out = await api.fixInput();
+  log(`display rebuilt — ${out.note}`, "ok");
+  // The iframe is holding the connection that just went away.
+  $("vnc").src = $("vnc").src;
+  return out;
+});
+
 $("btnWheel").onclick = () => setWheel(!wheel);
 $("btnReload").onclick = () => { $("vnc").src = $("vnc").src; log("reconnecting to clone display"); };
 

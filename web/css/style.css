@@ -181,3 +181,8 @@ body {
   color: var(--warn);
 }
 .wheel.off:hover { background: rgba(251,191,36,.14); }
+
+/* The button you press when the sandbox stops responding. Amber rather than
+   red: it fixes something, it does not destroy anything. */
+.tool.warnish { border-color: #5a4415; color: var(--warn); }
+.tool.warnish:hover:not(:disabled) { border-color: var(--warn); color: #fff; }

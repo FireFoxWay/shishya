@@ -1,1 +1,7 @@
-{"wallpaper":"galaxy","accent":"#6a4fe0","icon_size":96,"wallmark":"SHISHYA SANDBOX"}
+{
+  "wallpaper": "galaxy",
+  "accent": "#2fd44f",
+  "icon_size": 96,
+  "wallmark": "SHISHYA SANDBOX",
+  "fps": 12
+}

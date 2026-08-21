@@ -102,6 +102,43 @@ def launch_app(name):
     return {"launched": name}
 
 
+def reset_display():
+    """Rebuild the display stack without touching the VM or its apps.
+
+    Input into the sandbox has died several times, always the same way: stale
+    noVNC connections accumulate against one x11vnc and button releases stop
+    being delivered, so windows still raise and tooltips still show while
+    every control does nothing. It looks like a frozen app and is not one.
+
+    Stopping the units is not enough — websockify leaves children behind, and
+    those are exactly what holds the bad state — so the strays are killed by
+    name before anything restarts. Apps and open documents survive; only the
+    path between your mouse and the screen is rebuilt.
+    """
+    steps = [
+        ["sudo", "systemctl", "stop", "shishya-novnc", "shishya-vnc"],
+        ["sudo", "pkill", "-9", "-f", "websockify"],
+        ["sudo", "pkill", "-9", "-f", "x11vnc"],
+    ]
+    for step in steps:
+        subprocess.run(["limactl", "shell", "--workdir", "/", NAME, "--", *step],
+                       capture_output=True, timeout=60)
+    time.sleep(2)
+    for unit in ("shishya-vnc", "shishya-novnc"):
+        subprocess.run(["limactl", "shell", "--workdir", "/", NAME, "--",
+                        "sudo", "systemctl", "start", unit],
+                       capture_output=True, timeout=60)
+        time.sleep(1.5)
+
+    check = subprocess.run(
+        ["limactl", "shell", "--workdir", "/", NAME, "--", "bash", "-lc",
+         'echo "$(pgrep -c x11vnc) $(pgrep -cf \'websockify --web\')"'],
+        capture_output=True, text=True, timeout=30).stdout.split()
+    return {"x11vnc": check[0] if check else "?",
+            "websockify": check[1] if len(check) > 1 else "?",
+            "note": "reload the page, then press TAKE THE WHEEL"}
+
+
 # ─── The undo button ────────────────────────────────────────────────────────
 # NOT `limactl snapshot` — that is unimplemented for the `vz` driver, which
 # stores a raw disk rather than qcow2. macOS gives us something better: the

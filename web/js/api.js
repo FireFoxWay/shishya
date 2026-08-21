@@ -31,6 +31,7 @@ export const api = {
   upload,
   inbox:    ()      => call("inbox"),
   launch:   (app)   => call("launch", { app }),
+  fixInput: ()      => call("vm/fix-input", {}),
   status:   ()      => call("status"),
   ledger:   ()      => call("ledger"),
   create:   ()      => call("vm/create",   {}),

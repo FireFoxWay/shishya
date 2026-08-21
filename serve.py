@@ -44,6 +44,7 @@ LAUNCHABLE = {
     "inbox_app.py": "Inbox",
     "code_app.py": "Code",
     "models_app.py": "Models",
+    "system_app.py": "System",
 }
 
 
@@ -187,6 +188,10 @@ class Handler(SimpleHTTPRequestHandler):
             ledger.record(ledger.INFO, "vm.rollback", tag, actor="guru",
                           detail="everything the clone did since this tag is gone")
             return vm.rollback(tag)
+        if route == "vm/fix-input":
+            ledger.record(ledger.INFO, "display.reset", "vnc stack", actor="guru")
+            return vm.reset_display()
+
         if route == "vm/egress":
             locked = bool(body.get("locked", True))
             ledger.record(ledger.INFO, "net.egress",
