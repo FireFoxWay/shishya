@@ -127,6 +127,7 @@ def apply_look(look):
 
 ICONS = [
     ("Work",             "folder-documents",  lambda: files(WORK)),
+    ("Files",            "system-file-manager", lambda: app("files_app.py")),
     ("Inbox",            "mail-message-new",  lambda: app("inbox_app.py")),
     ("Shishya",          "system-run",        lambda: app("shishya_app.py")),
     ("Training Data",    "emblem-documents",  lambda: app("training_app.py")),
@@ -138,20 +139,24 @@ ICONS = [
 
 
 def files(path):
+    """Open our own Files app at that folder.
+
+    This used to call xdg-open, which is not installed here — so Work and
+    Lessons silently did nothing when clicked. Nothing logged it, because
+    Popen of a missing binary fails in the child, not in us.
+    """
     path.mkdir(parents=True, exist_ok=True)
-    # No file manager is installed and we do not want a heavy one pulled in
-    # just for this; xdg-open falls back sensibly and keeps the dependency
-    # surface small.
-    subprocess.Popen(["xdg-open", str(path)],
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    app("files_app.py", str(path))
 
 
-def app(name):
+def app(name, *args):
     target = APPS / name
     if not target.exists():
         return notice(f"{name} isn't built yet")
-    subprocess.Popen([sys.executable, str(target)],
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # Errors go to a log rather than /dev/null: an app that dies on startup
+    # should leave a trace somewhere, not just fail to appear.
+    log = open(f"/tmp/{name}.log", "a")
+    subprocess.Popen([sys.executable, str(target), *args], stdout=log, stderr=log)
 
 
 def notice(message):

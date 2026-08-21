@@ -12,6 +12,7 @@ matters.
 """
 
 import argparse
+import subprocess
 import sys
 
 import pyatspi
@@ -95,6 +96,80 @@ def _point(node, visible_only):
     return x + w // 2, y + h // 2, w, h
 
 
+# ─── being on top ───────────────────────────────────────────────────────────
+# AT-SPI reports where a control is, not whether you can reach it. A button
+# under another window has perfectly good coordinates and clicking them hits
+# the window on top instead — silently, landing a click somewhere nobody
+# intended. So before clicking we raise the window that owns the control, and
+# afterwards we check that the point really belongs to it.
+
+def toplevel_name(hit_app):
+    """The window title to raise. Apps name their frame after themselves,
+    which is what the window manager matches on."""
+    return hit_app.replace(".py", "").replace("_", " ")
+
+
+def window_at(x, y):
+    """Which window owns this point, according to X rather than AT-SPI."""
+    try:
+        out = subprocess.run(["xdotool", "getmouselocation", "--shell"],
+                             capture_output=True, text=True, timeout=4)
+        subprocess.run(["xdotool", "mousemove", str(x), str(y)], timeout=4)
+        out = subprocess.run(["xdotool", "getmouselocation", "--shell"],
+                             capture_output=True, text=True, timeout=4).stdout
+        for line in out.splitlines():
+            if line.startswith("WINDOW="):
+                return line.split("=", 1)[1].strip()
+    except (subprocess.SubprocessError, FileNotFoundError):
+        pass
+    return None
+
+
+def raise_owner(hit):
+    """Bring the control's own window forward.
+
+    The desktop is deliberately excluded: it is a DESKTOP-type window and the
+    window manager keeps it behind everything, by design. Icons on it are only
+    clickable when nothing covers them, exactly as on any other desktop.
+    """
+    if "desktop" in hit["app"].lower():
+        return False
+    try:
+        found = subprocess.run(
+            ["xdotool", "search", "--onlyvisible", "--name", toplevel_name(hit["app"])],
+            capture_output=True, text=True, timeout=5).stdout.split()
+        if not found:
+            return False
+        subprocess.run(["xdotool", "windowactivate", "--sync", found[0]], timeout=5)
+        return True
+    except (subprocess.SubprocessError, FileNotFoundError):
+        return False
+
+
+def click(hit, name, app=None, role=None):
+    """Click a control, having first made sure it is the thing being clicked."""
+    raised = raise_owner(hit)
+    if raised:
+        # Raising can move things, so ask again rather than trusting the
+        # coordinates we took before the window came forward.
+        again = find(name, app, role)
+        if again:
+            hit = again[0]
+
+    owner = window_at(hit["x"], hit["y"])
+    if owner:
+        mine = subprocess.run(["xdotool", "getwindowname", owner],
+                              capture_output=True, text=True, timeout=4).stdout.strip()
+        expected = toplevel_name(hit["app"]).lower()
+        if mine and expected.split()[0] not in mine.lower() and "desktop" not in mine.lower():
+            return (False, f"{hit['name']!r} is underneath {mine!r} — "
+                           f"close or move that window first")
+
+    subprocess.run(["xdotool", "mousemove", str(hit["x"]), str(hit["y"]),
+                    "click", "1"], check=False)
+    return (True, f"clicked {hit['name']!r}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("name")
@@ -113,11 +188,10 @@ def main():
               f"@ {h['x']},{h['y']}")
 
     if args.click:
-        import subprocess
-        best = hits[0]
-        subprocess.run(["xdotool", "mousemove", str(best["x"]), str(best["y"]),
-                        "click", "1"], check=False)
-        print(f"clicked {best['name']!r}")
+        ok, message = click(hits[0], args.name, args.app, args.role)
+        print(message)
+        if not ok:
+            sys.exit(2)
 
 
 if __name__ == "__main__":
