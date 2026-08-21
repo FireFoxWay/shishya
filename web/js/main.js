@@ -193,6 +193,40 @@ for (const btn of document.querySelectorAll("#apps [data-app]")) {
                             () => api.launch(btn.dataset.app));
 }
 
+/* ─── asking, and closing, without the display ───────────────────────────── */
+
+async function askClone() {
+  const text = $("askBox").value.trim();
+  if (!text) return;
+  const out = $("answer");
+  out.className = "answer waiting";
+  out.textContent = "Asking… the first answer of the evening is the slowest.";
+  try {
+    await api.ask(text);
+    // The app answers on its own thread, so poll rather than assume.
+    for (let i = 0; i < 60; i++) {
+      await new Promise(r => setTimeout(r, 3000));
+      const got = await api.answer();
+      const text_ = (got.result || "").trim();
+      if (text_ && !/^\(no answer/.test(text_)) {
+        out.className = "answer";
+        out.textContent = text_;
+        return;
+      }
+    }
+    out.textContent = "Still working. Look at the clone's screen — it may already be there.";
+  } catch (e) {
+    out.className = "answer";
+    out.textContent = `Couldn't ask: ${e.message}`;
+  }
+}
+
+$("btnAsk").onclick = askClone;
+$("askBox").addEventListener("keydown", e => { if (e.key === "Enter") askClone(); });
+
+$("btnCloseAll").onclick = e =>
+  guard(e.target, "close apps", () => api.close());
+
 $("btnFix").onclick = e => guard(e.target, "rebuild display", async () => {
   const out = await api.fixInput();
   log(`display rebuilt — ${out.note}`, "ok");

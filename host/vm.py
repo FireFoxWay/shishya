@@ -102,6 +102,43 @@ def launch_app(name):
     return {"launched": name}
 
 
+def close_apps(name=None):
+    """Close one app, or all of them, from outside the sandbox.
+
+    Closing a window normally means clicking its X, which needs the display
+    input path — the one thing that keeps failing. This does not touch the
+    display at all.
+    """
+    target = name if name else "_app.py"
+    subprocess.run(
+        ["limactl", "shell", "--workdir", "/", NAME, "--",
+         "sudo", "pkill", "-f", target],
+        capture_output=True, timeout=60)
+    time.sleep(1)
+    left = subprocess.run(
+        ["limactl", "shell", "--workdir", "/", NAME, "--", "bash", "-lc",
+         "pgrep -u clone -f '_app.py' | wc -l"],
+        capture_output=True, text=True, timeout=30).stdout.strip()
+    return {"closed": target, "still_open": left}
+
+
+def drive(action, text=""):
+    """Type into the sandbox's apps through the accessibility layer.
+
+    Same reason as close_apps: this reaches the widgets directly rather than
+    going through the pointer, so it works on the evenings when clicking
+    inside the sandbox does not.
+    """
+    args = ["ask", text] if action == "ask" else ["read"]
+    p = subprocess.run(
+        ["limactl", "shell", "--workdir", "/", NAME, "--",
+         "sudo", "-u", "clone", "bash", "-lc",
+         "set -a; . /etc/shishya.env; set +a; cd /opt/shishya/vm && "
+         "timeout 300 python3 drive.py " + " ".join(f"'{a}'" for a in args)],
+        capture_output=True, text=True, timeout=320)
+    return {"result": (p.stdout or p.stderr).strip()}
+
+
 def reset_display():
     """Rebuild the display stack without touching the VM or its apps.
 

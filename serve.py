@@ -188,6 +188,23 @@ class Handler(SimpleHTTPRequestHandler):
             ledger.record(ledger.INFO, "vm.rollback", tag, actor="guru",
                           detail="everything the clone did since this tag is gone")
             return vm.rollback(tag)
+        if route == "close":
+            name = body.get("app")
+            if name and name not in LAUNCHABLE:
+                return {"error": f"unknown app {name!r}"}
+            ledger.record(ledger.INFO, "app.close", name or "all", actor="guru")
+            return vm.close_apps(name)
+
+        if route == "ask":
+            text = str(body.get("text", "")).strip()
+            if not text:
+                return {"error": "nothing to ask"}
+            ledger.record(ledger.INFO, "ask", text[:70], actor="guru")
+            return vm.drive("ask", text)
+
+        if route == "answer":
+            return vm.drive("read")
+
         if route == "vm/fix-input":
             ledger.record(ledger.INFO, "display.reset", "vnc stack", actor="guru")
             return vm.reset_display()
