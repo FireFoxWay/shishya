@@ -111,6 +111,8 @@ class Recorder:
             # focus events fire on losing focus too; only the gain is a step
             if e.type == "object:state-changed:focused" and not e.detail1:
                 return
+            if self.is_noise(e):
+                return
             self.n += 1
             self.write({
                 "kind": "step",
@@ -124,6 +126,40 @@ class Recorder:
             })
         except Exception as exc:
             self.write({"kind": "error", "i": self.n, "detail": repr(exc)})
+
+    # ── what is not a step ──────────────────────────────────────────────────
+    # AT-SPI reports every change to the interface, not every action by the
+    # person. A clock relabelling itself once a second, a status line updating
+    # after a save, a progress count ticking up — all arrive as
+    # text-changed:insert and are indistinguishable, event-wise, from typing.
+    #
+    # The distinction that holds: a person can only type into something
+    # editable. Labels are written to by the program, never by the user, so a
+    # text change on one is the interface talking to itself.
+
+    CHROME = {"Taskbar"}          # our own shell furniture, never the task
+
+    def is_noise(self, e):
+        try:
+            source = e.source
+            if source is None:
+                return True
+
+            if e.type == "object:text-changed:insert":
+                states = source.getState()
+                if not states.contains(pyatspi.STATE_EDITABLE):
+                    return True
+
+            # Anything inside the taskbar is us, not the job being taught.
+            node, depth = source, 0
+            while node is not None and depth < 8:
+                if (node.name or "") in self.CHROME:
+                    return True
+                node = node.parent
+                depth += 1
+        except Exception:
+            return True               # unreadable source is not a usable step
+        return False
 
     def close(self):
         self.write({"kind": "meta", "ended": time.time(), "steps": self.n})

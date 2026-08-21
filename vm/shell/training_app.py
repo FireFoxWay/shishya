@@ -82,6 +82,42 @@ class Library:
         return [self.chunks[i] for _, i in scored[:k]]
 
 
+# ─── asking vs asking-for ───────────────────────────────────────────────────
+# People type what they want into whichever window is already open. Told to
+# "create a comparison table in Excel", a question-answering app that replies
+# "I cannot find it in the documents" is technically obedient and plainly
+# wrong. So the app reads intent first and hands creation work to the document
+# writer, using the same documents as source.
+#
+# Keyword matching rather than asking the model: it is instant, it is
+# predictable, and a misfire here would send someone's question off to build a
+# spreadsheet — a surprise far more annoying than a missed shortcut.
+
+MAKE_VERBS = ("create", "make", "build", "generate", "draft", "produce",
+              "prepare", "write me", "give me", "put together", "compile")
+
+MAKE_KINDS = {
+    "Spreadsheet": ("excel", "xlsx", "spreadsheet", "sheet", "table", "grid",
+                    "comparison table", "csv"),
+    "Presentation": ("powerpoint", "ppt", "pptx", "presentation", "deck",
+                     "slides", "slide"),
+    "Document": ("word", "docx", "document", "report", "brief", "note",
+                 "letter", "summary document", "write-up"),
+}
+
+
+def wants_a_file(question):
+    """Returns the kind to build, or None if this is an ordinary question."""
+    q = question.lower()
+    if not any(v in q for v in MAKE_VERBS):
+        return None
+    # Spreadsheet before Document: "comparison table in a report" is a table.
+    for kind in ("Spreadsheet", "Presentation", "Document"):
+        if any(word in q for word in MAKE_KINDS[kind]):
+            return kind
+    return None
+
+
 SYSTEM = (
     "You answer only from the passages you are given. If they do not contain "
     "the answer, say exactly that you cannot find it in the documents — never "
@@ -199,26 +235,53 @@ class TrainingApp(Gtk.Window):
         if not self.library.chunks:
             return self.show("Add some documents first — I only answer from what is here.")
 
-        found = self.library.search(question)
+        kind = wants_a_file(question)
+        # Building something needs the whole picture, not the four best-matching
+        # fragments — a comparison table drawn from a quarter of the document
+        # comes out with a quarter of the rows.
+        found = self.library.search(question, k=10 if kind else 4)
         if not found:
             return self.show("Nothing in these documents looks related to that.")
 
         self.askbtn.set_sensitive(False)
-        self.show("Reading…")
+        self.show(f"Building the {kind.lower()}…" if kind else "Reading…")
         common.set_state("working")
 
         passages = "\n\n".join(f"[from {src}]\n{text}" for src, text in found)
-        prompt = f"PASSAGES:\n{passages}\n\nQUESTION: {question}"
+        sources = "\n".join(f"  · {src}" for src in sorted({src for src, _ in found}))
 
         def work():
+            if kind:
+                GLib.idle_add(self.done, self.build(kind, question, passages, sources))
+                return
             try:
-                reply = common.ask(prompt, system=SYSTEM)
+                reply = common.ask(f"PASSAGES:\n{passages}\n\nQUESTION: {question}",
+                                   system=SYSTEM)
             except RuntimeError as e:
                 reply = str(e)
-            sources = "\n".join(f"  · {src}" for src, _ in found)
             GLib.idle_add(self.done, f"{reply.strip()}\n\nRead from:\n{sources}")
 
         threading.Thread(target=work, daemon=True).start()
+
+    def build(self, kind, question, passages, sources):
+        """Same writers the Make a Document app uses — one implementation, so a
+        file built from here is identical to one built from there."""
+        import json
+        import make_app
+
+        prompt = (f"{make_app.ASKS[kind]}\n\nWHAT IS NEEDED:\n{question}\n\n"
+                  f"SOURCE MATERIAL — build this from the facts below and do "
+                  f"not invent competing ones:\n{passages}\n\n"
+                  f"Give it a short, sensible filename with no extension.")
+        try:
+            spec = json.loads(common.ask(prompt, schema=make_app.SCHEMAS[kind]))
+            path = make_app.WRITERS[kind](spec)
+        except (json.JSONDecodeError, KeyError) as e:
+            return f"The model returned something I could not turn into a file: {e}"
+        except Exception as e:
+            return f"Could not write the file: {e}"
+        return (f"Made {path.name}\n\nIt is in Work/ — open the Work folder on "
+                f"the desktop.\n\nBuilt from:\n{sources}")
 
     def done(self, text):
         self.show(text)
