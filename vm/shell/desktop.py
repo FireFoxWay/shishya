@@ -143,6 +143,8 @@ def apply_look(look):
 # proud we are of each app.
 
 MENU = [
+    ("Shishya — talk to it", "user-available",  lambda: app("chat_app.py")),
+    (None, None, None),
     ("Files",             "system-file-manager",  lambda: app("files_app.py")),
     ("Inbox",             "mail-message-new",     lambda: app("inbox_app.py")),
     (None, None, None),

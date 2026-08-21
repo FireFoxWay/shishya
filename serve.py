@@ -37,6 +37,7 @@ MAX_UPLOAD = 64 * 1024 * 1024
 # An explicit list, not "whatever file name you send". This endpoint runs a
 # program inside the sandbox; it takes a choice from a menu, never a path.
 LAUNCHABLE = {
+    "chat_app.py": "Shishya",
     "training_app.py": "Training Data",
     "files_app.py": "Files",
     "activity_app.py": "Activity",
