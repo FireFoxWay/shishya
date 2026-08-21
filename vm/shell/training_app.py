@@ -43,16 +43,33 @@ def terms(text):
 
 
 class Library:
-    """Chunks plus an inverted index. Small enough to rebuild from scratch on
-    every change, which removes a whole class of staleness bug."""
+    """Chunks plus an inverted index, and — for spreadsheets — a row index.
+
+    The row index exists because prose chunking is wrong for tables. A 1000
+    row sheet cut into overlapping 1400-character windows gives the model
+    fragments of many unrelated rows at once, and it blends them: asked for
+    the HDMI Cable it confidently returned a product id belonging to Golf
+    Tees, with a supplier and reorder point that were never in the same row
+    as each other.
+
+    So table rows are kept whole and searched as rows. A question that names
+    something in the table gets the actual matching lines, with their header,
+    and nothing else — there is nothing adjacent for the model to blend in.
+    """
 
     def __init__(self):
         self.chunks = []          # (source, text)
         self.freqs = []           # Counter per chunk
         self.doc_count = Counter()
+        self.tables = []          # (source, sheet, header, [row strings])
 
     def add(self, path):
         text, how = common.extract(path)
+
+        # A sheet arrives as "## Sheet: name" followed by pipe-separated rows.
+        if "## Sheet:" in text:
+            self._add_table(Path(path).name, text)
+
         pieces = common.chunk(text)
         for piece in pieces:
             counts = Counter(terms(piece))
@@ -62,7 +79,83 @@ class Library:
                 self.doc_count[term] += 1
         return len(pieces), how
 
+    def _add_table(self, source, text):
+        for block in text.split("## Sheet:"):
+            block = block.strip()
+            if not block:
+                continue
+            lines = [l for l in block.splitlines() if l.strip()]
+            if len(lines) < 2:
+                continue
+            sheet, header, rows = lines[0].strip(), lines[1], lines[2:]
+            self.tables.append((source, sheet, header, rows))
+
+    # ── searching ───────────────────────────────────────────────────────────
+
     def search(self, query, k=4):
+        rows = self.search_rows(query)
+        chunks = self.search_chunks(query, k)
+        # Matching rows first: they are exact, and the model reads what comes
+        # first most carefully. Prose chunks still follow, because the answer
+        # often needs a policy as well as a row.
+        return rows + chunks[: max(1, k - len(rows))]
+
+    def search_rows(self, query, limit=30):
+        """Rows containing the query's distinctive words, kept verbatim.
+
+        Matching keys on rarity, not on every word. A question says "the
+        reorder point and supplier for PRD-1031" — but "reorder" and
+        "supplier" are column headings that appear in no row at all, while
+        "1031" appears in exactly one. Requiring every word matched nothing;
+        requiring any word would return most of the sheet. So a row must
+        contain at least one term that is rare within this table, and rows
+        are then ranked by how much of the query they cover.
+        """
+        wanted = set(terms(query))
+        if not wanted or not self.tables:
+            return []
+
+        out = []
+        for source, sheet, header, rows in self.tables:
+            counts = self._term_counts(source, sheet, rows)
+            total = max(1, len(rows))
+            # Rare inside this table: fewer than one row in twenty.
+            rare = {t for t in wanted if 0 < counts.get(t, 0) <= max(1, total // 20)}
+            if not rare:
+                continue
+
+            scored = []
+            for row in rows:
+                cells = set(terms(row))
+                if not (rare & cells):
+                    continue
+                scored.append((len(wanted & cells), len(rare & cells), row))
+            if not scored:
+                continue
+
+            scored.sort(key=lambda r: (-r[1], -r[0]))
+            hits = [row for _, _, row in scored[:limit]]
+            note = ("" if len(scored) <= limit
+                    else f"\n({len(scored)} rows match; the {limit} closest are shown)")
+            out.append((f"{source} — {sheet}",
+                        f"{header}\n" + "\n".join(hits) + note))
+        return out
+
+    def _term_counts(self, source, sheet, rows):
+        """How many rows each term appears in, computed once per table."""
+        key = (source, sheet)
+        cached = getattr(self, "_counts_cache", None)
+        if cached is None:
+            cached = self._counts_cache = {}
+        if key not in cached:
+            c = Counter()
+            for row in rows:
+                for t in set(terms(row)):
+                    c[t] += 1
+            cached[key] = c
+        return cached[key]
+
+    def search_chunks(self, query, k=4):
         wanted = Counter(terms(query))
         if not wanted or not self.chunks:
             return []
@@ -79,65 +172,9 @@ class Library:
             if score > 0:
                 scored.append((score, i))
         scored.sort(reverse=True)
-        picked = [i for _, i in scored[:k]]
-
-        # A broad question ("which is better?") shares few rare words with any
-        # one passage, so scoring alone can return a single fragment and the
-        # answer comes out thin. When the top hits cluster in one document,
-        # bring in the rest of that document — it is the subject being asked
-        # about, and these files are small enough to afford it.
-        if picked and len(picked) < k:
-            top_doc = self.chunks[picked[0]][0]
-            for i, (src, _) in enumerate(self.chunks):
-                if src == top_doc and i not in picked:
-                    picked.append(i)
-                    if len(picked) >= k:
-                        break
-        return [self.chunks[i] for i in picked]
+        return [self.chunks[i] for _, i in scored[:k]]
 
 
-# ─── asking vs asking-for ───────────────────────────────────────────────────
-# People type what they want into whichever window is already open. Told to
-# "create a comparison table in Excel", a question-answering app that replies
-# "I cannot find it in the documents" is technically obedient and plainly
-# wrong. So the app reads intent first and hands creation work to the document
-# writer, using the same documents as source.
-#
-# Keyword matching rather than asking the model: it is instant, it is
-# predictable, and a misfire here would send someone's question off to build a
-# spreadsheet — a surprise far more annoying than a missed shortcut.
-
-MAKE_VERBS = ("create", "make", "build", "generate", "draft", "produce",
-              "prepare", "write me", "give me", "put together", "compile")
-
-MAKE_KINDS = {
-    "Spreadsheet": ("excel", "xlsx", "spreadsheet", "sheet", "table", "grid",
-                    "comparison table", "csv"),
-    "Presentation": ("powerpoint", "ppt", "pptx", "presentation", "deck",
-                     "slides", "slide"),
-    "Document": ("word", "docx", "document", "report", "brief", "note",
-                 "letter", "summary document", "write-up"),
-}
-
-
-def wants_a_file(question):
-    """Returns the kind to build, or None if this is an ordinary question."""
-    q = question.lower()
-    if not any(v in q for v in MAKE_VERBS):
-        return None
-    # Spreadsheet before Document: "comparison table in a report" is a table.
-    for kind in ("Spreadsheet", "Presentation", "Document"):
-        if any(word in q for word in MAKE_KINDS[kind]):
-            return kind
-    return None
-
-
-# The first version of this said: if the passages do not contain the answer,
-# say you cannot find it. Too absolute. Asked "who won macOS vs Windows" of a
-# document that compares the two at length but names no winner, it refused —
-# technically correct and useless. Weighing up material to reach a conclusion
-# is reading, not inventing. The line that matters is facts: those must come
-# from the passages. Judgements may be drawn from them.
 SYSTEM = (
     "You answer using the passages you are given.\n"
     "Every fact, figure, name and date must come from them — never from your "
