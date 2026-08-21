@@ -79,7 +79,21 @@ class Library:
             if score > 0:
                 scored.append((score, i))
         scored.sort(reverse=True)
-        return [self.chunks[i] for _, i in scored[:k]]
+        picked = [i for _, i in scored[:k]]
+
+        # A broad question ("which is better?") shares few rare words with any
+        # one passage, so scoring alone can return a single fragment and the
+        # answer comes out thin. When the top hits cluster in one document,
+        # bring in the rest of that document — it is the subject being asked
+        # about, and these files are small enough to afford it.
+        if picked and len(picked) < k:
+            top_doc = self.chunks[picked[0]][0]
+            for i, (src, _) in enumerate(self.chunks):
+                if src == top_doc and i not in picked:
+                    picked.append(i)
+                    if len(picked) >= k:
+                        break
+        return [self.chunks[i] for i in picked]
 
 
 # ─── asking vs asking-for ───────────────────────────────────────────────────
@@ -118,11 +132,23 @@ def wants_a_file(question):
     return None
 
 
+# The first version of this said: if the passages do not contain the answer,
+# say you cannot find it. Too absolute. Asked "who won macOS vs Windows" of a
+# document that compares the two at length but names no winner, it refused —
+# technically correct and useless. Weighing up material to reach a conclusion
+# is reading, not inventing. The line that matters is facts: those must come
+# from the passages. Judgements may be drawn from them.
 SYSTEM = (
-    "You answer only from the passages you are given. If they do not contain "
-    "the answer, say exactly that you cannot find it in the documents — never "
-    "fill the gap from your own knowledge. Quote the specific figure, name or "
-    "date when there is one. Answer in a few sentences."
+    "You answer using the passages you are given.\n"
+    "Every fact, figure, name and date must come from them — never from your "
+    "own knowledge, and never invented.\n"
+    "You may compare, weigh up and draw a conclusion the passages support, "
+    "even when they state no conclusion themselves. If a question asks which "
+    "is better and the passages give strengths on both sides, say that, and "
+    "say what each is better at.\n"
+    "Only say you cannot find it in the documents when they genuinely do not "
+    "cover the subject at all.\n"
+    "Answer in a few sentences, in plain language."
 )
 
 

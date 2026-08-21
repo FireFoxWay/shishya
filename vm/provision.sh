@@ -152,8 +152,28 @@ UNIT
 pip3 install --break-system-packages --quiet python-pptx || \
   echo "shishya: WARNING python-pptx unavailable — PowerPoint output disabled"
 
+# The desktop itself is a service, not something launched from a shell.
+# Launching it over `limactl shell` never detached cleanly, so restarts left
+# duplicates stacked on top of each other — two desktops, two taskbars, and
+# clicks landing on whichever one happened to be on top.
+cat > /etc/systemd/system/shishya-desktop.service <<'UNIT'
+[Unit]
+Description=Shishya desktop shell
+After=shishya-wm.service shishya-atspi.service
+Requires=shishya-wm.service
+[Service]
+User=clone
+EnvironmentFile=/etc/shishya.env
+WorkingDirectory=/opt/shishya/vm/shell
+ExecStart=/usr/bin/python3 /opt/shishya/vm/shell/desktop.py
+Restart=always
+RestartSec=2
+[Install]
+WantedBy=multi-user.target
+UNIT
+
 systemctl daemon-reload
-systemctl enable --now shishya-dbus shishya-display shishya-atspi shishya-wm shishya-vnc shishya-novnc
+systemctl enable --now shishya-dbus shishya-display shishya-atspi shishya-wm shishya-vnc shishya-novnc shishya-desktop
 
 # GTK apps check this before exposing anything to AT-SPI.
 sudo -u clone env DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/shishya-bus \
