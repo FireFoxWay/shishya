@@ -28,7 +28,7 @@
     <div class="paneHead">
       <span>THE CLONE</span>
       <div class="tools">
-        <button id="btnWheel" class="tool">TAKE THE WHEEL</button>
+        <button id="btnWheel" class="tool on">HAND IT BACK</button>
         <button id="btnReload" class="tool ghost">RECONNECT</button>
       </div>
     </div>
@@ -39,7 +39,7 @@
            without this the iframe's permissions policy blocks it and noVNC
            shows a red error card over the clone's screen. -->
       <iframe id="vnc" title="clone display" allow="fullscreen"
-              src="http://localhost:6080/vnc.html?autoconnect=1&resize=scale&view_only=1"></iframe>
+              src="http://localhost:6080/vnc.html?autoconnect=1&reconnect=1&reconnect_delay=1500&resize=scale&view_only=0"></iframe>
       <div id="screenMsg" class="msg">sandbox not running</div>
     </div>
   </section>

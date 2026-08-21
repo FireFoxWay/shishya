@@ -54,10 +54,9 @@ CSS = b"""
 
 .taskbar        { background-color: #0b0f14; border-top: 1px solid #1e2833; }
 
-.power          { background: transparent; border: none; border-radius: 0;
-                  padding: 0 20px; color: #c3ccd6; }
-/* Red only on hover: a permanently red power button reads as an alarm. */
-.power:hover    { background-color: #c42b1c; color: #ffffff; }
+.start          { background: transparent; border: none; border-radius: 0;
+                  padding: 0 18px; color: #e6ebf1; font-size: 12px; }
+.start:hover    { background: rgba(255,255,255,.10); }
 
 .task           { background: rgba(255,255,255,.05); border: none;
                   border-radius: 0;
@@ -125,18 +124,39 @@ def apply_look(look):
 # file. Skills you can point at are much easier to believe than skills
 # described in a status panel.
 
-ICONS = [
-    ("Work",             "folder-documents",  lambda: files(WORK)),
-    ("Files",            "system-file-manager", lambda: app("files_app.py")),
-    ("Inbox",            "mail-message-new",  lambda: app("inbox_app.py")),
-    ("Shishya",          "system-run",        lambda: app("shishya_app.py")),
-    ("Training Data",    "emblem-documents",  lambda: app("training_app.py")),
-    ("Make a Document",  "x-office-document", lambda: app("make_app.py")),
-    ("Sheets",           "x-office-spreadsheet", lambda: app("sheet_app.py")),
-    ("Lessons",          "folder-templates",  lambda: files(LESSONS)),
-    ("Activity",         "text-x-generic",    lambda: app("activity_app.py")),
-    ("Settings",         "preferences-system", lambda: app("settings_app.py")),
+# ─── what the launcher offers ───────────────────────────────────────────────
+# Ordered by how the work actually flows — a file arrives, you read it, you
+# teach from it, you produce something — rather than alphabetically or by how
+# proud we are of each app.
+
+MENU = [
+    ("Files",             "system-file-manager",  lambda: app("files_app.py")),
+    ("Inbox",             "mail-message-new",     lambda: app("inbox_app.py")),
+    (None, None, None),
+    ("Training Data",     "emblem-documents",     lambda: app("training_app.py")),
+    ("Shishya",           "system-run",           lambda: app("shishya_app.py")),
+    (None, None, None),
+    ("Make a Document",   "x-office-document",    lambda: app("make_app.py")),
+    ("Sheets",            "x-office-spreadsheet", lambda: app("sheet_app.py")),
+    ("LibreOffice Calc",  "x-office-spreadsheet", lambda: office("--calc")),
+    ("LibreOffice Writer", "x-office-document",   lambda: office("--writer")),
+    (None, None, None),
+    ("Work folder",       "folder-documents",     lambda: files(WORK)),
+    ("Lessons",           "folder-templates",     lambda: files(LESSONS)),
+    ("Activity",          "text-x-generic",       lambda: app("activity_app.py")),
+    ("Settings",          "preferences-system",   lambda: app("settings_app.py")),
 ]
+
+
+def office(mode):
+    """The real LibreOffice, not a viewer.
+
+    The clone has to learn by watching a person work, and then do that work
+    itself — which only holds if both use the same application. A lookalike
+    would make every recorded lesson untransferable.
+    """
+    subprocess.Popen(["libreoffice", mode],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def files(path):
@@ -187,53 +207,18 @@ class Desktop(Gtk.Window):
 
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.add(outer)
-
         outer.set_margin_bottom(TASKBAR_H)
 
-        grid = Gtk.FlowBox(
-            valign=Gtk.Align.START, halign=Gtk.Align.START,
-            selection_mode=Gtk.SelectionMode.NONE,
-            min_children_per_line=1, max_children_per_line=1,
-            row_spacing=6, margin=22,
-        )
-        for label, icon, action in ICONS:
-            grid.add(self._icon(label, icon, action))
-        outer.pack_start(grid, True, True, 0)
-
-        self.tag = Gtk.Label(halign=Gtk.Align.END, margin=18)
+        # Nothing on the desktop. Everything lives behind the launcher, so the
+        # clone's screen stays legible while it works — which is the screen
+        # someone is watching for the whole demonstration.
+        self.tag = Gtk.Label(halign=Gtk.Align.END, valign=Gtk.Align.END, margin=18)
         self.tag.get_style_context().add_class("wall-title")
         outer.pack_end(self.tag, False, False, 0)
+        self.boxes = []
 
     def relabel(self, look):
         self.tag.set_text(look["wallmark"])
-        for box in self.boxes:
-            box.set_size_request(look["icon_size"], -1)
-
-    def _icon(self, label, icon_name, action):
-        btn = Gtk.Button(relief=Gtk.ReliefStyle.NONE)
-        btn.get_style_context().add_class("icon-btn")
-        # The accessible name is what the recorder will write into a trace,
-        # so it has to read like the thing itself — "Training Data", not
-        # "button23".
-        btn.get_accessible().set_name(label)
-
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        box.set_size_request(96, -1)
-        self.boxes.append(box)
-        box.pack_start(Gtk.Image.new_from_icon_name(icon_name, Gtk.IconSize.DIALOG),
-                       False, False, 0)
-        text = Gtk.Label(label=label)
-        text.get_style_context().add_class("icon-label")
-        text.set_line_wrap(True)
-        text.set_justify(Gtk.Justification.CENTER)
-        text.set_max_width_chars(12)
-        box.pack_start(text, False, False, 0)
-
-        btn.add(box)
-        # Single click, not double: the clone drives this through synthetic
-        # events, and one click is one less thing to get the timing wrong on.
-        btn.connect("clicked", lambda _b: action())
-        return btn
 
 
 class Taskbar(Gtk.Window):
@@ -252,16 +237,24 @@ class Taskbar(Gtk.Window):
         bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         self.add(bar)
 
-        # ── far left: power ──
-        power = Gtk.Button()
-        power.get_style_context().add_class("power")
-        power.set_relief(Gtk.ReliefStyle.NONE)
-        power.get_accessible().set_name("Shut down")
-        power.set_tooltip_text("Shut down the sandbox")
-        power.add(Gtk.Image.new_from_icon_name("system-shutdown-symbolic",
-                                               Gtk.IconSize.LARGE_TOOLBAR))
-        power.connect("clicked", self.on_power)
-        bar.pack_start(power, False, False, 0)
+        # ── far left: the launcher ──
+        # Everything opens from here. Shut down sits at the bottom of the same
+        # menu rather than being the corner button itself: the corner is where
+        # a hand goes without looking, and that should not be the control that
+        # ends the session.
+        self.start = Gtk.Button()
+        self.start.get_style_context().add_class("start")
+        self.start.set_relief(Gtk.ReliefStyle.NONE)
+        self.start.get_accessible().set_name("Apps")
+        self.start.set_tooltip_text("Apps")
+        row = Gtk.Box(spacing=8)
+        row.pack_start(Gtk.Image.new_from_icon_name("view-grid-symbolic",
+                                                    Gtk.IconSize.LARGE_TOOLBAR),
+                       False, False, 0)
+        row.pack_start(Gtk.Label(label="Apps"), False, False, 0)
+        self.start.add(row)
+        self.start.connect("clicked", self.on_start)
+        bar.pack_start(self.start, False, False, 0)
 
         self.tasks = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6,
                              margin_start=10)
@@ -320,6 +313,41 @@ class Taskbar(Gtk.Window):
             self.tasks.pack_start(b, False, False, 0)
         self.tasks.show_all()
         return True
+
+    def on_start(self, button):
+        menu = Gtk.Menu()
+        menu.get_accessible().set_name("Apps")
+
+        for label, icon, action in MENU:
+            if label is None:
+                menu.append(Gtk.SeparatorMenuItem())
+                continue
+            item = Gtk.MenuItem()
+            item.get_accessible().set_name(label)
+            row = Gtk.Box(spacing=10)
+            row.pack_start(Gtk.Image.new_from_icon_name(icon, Gtk.IconSize.MENU),
+                           False, False, 0)
+            row.pack_start(Gtk.Label(label=label, xalign=0), True, True, 0)
+            item.add(row)
+            item.connect("activate", lambda _i, fn=action: fn())
+            menu.append(item)
+
+        menu.append(Gtk.SeparatorMenuItem())
+        power = Gtk.MenuItem()
+        power.get_accessible().set_name("Shut down")
+        prow = Gtk.Box(spacing=10)
+        prow.pack_start(Gtk.Image.new_from_icon_name("system-shutdown-symbolic",
+                                                     Gtk.IconSize.MENU), False, False, 0)
+        prow.pack_start(Gtk.Label(label="Shut down", xalign=0), True, True, 0)
+        power.add(prow)
+        power.connect("activate", self.on_power)
+        menu.append(power)
+
+        menu.show_all()
+        # Anchored to the button's top-left so it rises out of the corner
+        # rather than appearing over the pointer.
+        menu.popup_at_widget(button, Gdk.Gravity.NORTH_WEST,
+                             Gdk.Gravity.SOUTH_WEST, None)
 
     def on_power(self, _btn):
         d = Gtk.MessageDialog(

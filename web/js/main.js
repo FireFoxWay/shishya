@@ -11,7 +11,7 @@ const $ = id => document.getElementById(id);
 const VERDICT_CLASS = { allow: "ok", deny: "no", info: "" };
 
 let netLocked = null;      // unknown until the sandbox is asked
-let wheel = false;          // are we driving, or just watching?
+let wheel = true;           // interactive from the start
 
 /* ─── logging ────────────────────────────────────────────────────────────── */
 
@@ -118,6 +118,7 @@ function setWheel(on) {
   const f = $("vnc");
   const url = new URL(f.src);
   url.searchParams.set("view_only", on ? "0" : "1");
+  url.searchParams.set("reconnect", "1");
   f.src = url.toString();
   $("btnWheel").classList.toggle("on", on);
   $("btnWheel").textContent = on ? "HAND IT BACK" : "TAKE THE WHEEL";
@@ -181,4 +182,4 @@ $("btnReload").onclick = () => { $("vnc").src = $("vnc").src; log("reconnecting 
 
 refresh();
 setInterval(refresh, 3000);
-log("control panel up — week 1: prove the pipeline");
+log("control panel up — you have the wheel");

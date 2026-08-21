@@ -25,7 +25,7 @@ apt-get install -y --no-install-recommends \
   python3-gi python3-gi-cairo gir1.2-gtk-3.0 \
   python3-openpyxl python3-docx \
   at-spi2-core python3-pyatspi gir1.2-atspi-2.0 \
-  libreoffice-calc libreoffice-writer evince poppler-utils \
+  libreoffice-calc libreoffice-writer libreoffice-gtk3 evince poppler-utils \
   fonts-dejavu-core
 
 # ─── The clone's own account ────────────────────────────────────────────────
@@ -38,6 +38,12 @@ id clone &>/dev/null || useradd -m -s /bin/bash clone
 # this the clone cannot write to its own home and nothing works.
 # Non-recursive on purpose: -R would descend into the mount and fail.
 chown clone:clone /home/clone
+# .config too, recursively. Lima creates parts of the home before useradd
+# runs, leaving directories owned by root — and LibreOffice refuses to start
+# with "User installation could not be completed" when it cannot write its
+# profile there. The message names nothing about permissions.
+install -d -o clone -g clone /home/clone/.config
+chown -R clone:clone /home/clone/.config
 
 # NOT /home/clone/shared — that is the virtiofs mountpoint, and chowning a
 # virtiofs mount fails with EPERM. Its ownership comes from the host side.
@@ -64,6 +70,10 @@ GTK_MODULES=atk-bridge
 QT_ACCESSIBILITY=1
 NO_AT_BRIDGE=0
 GTK_A11Y=atspi
+# LibreOffice defaults to its own VCL backend, which publishes nothing to
+# AT-SPI. Forcing the GTK3 backend is what lets the recorder see inside Calc —
+# and the clone has to learn in the same spreadsheet the person used.
+SAL_USE_VCLPLUGIN=gtk3
 ENV
 
 cat > /etc/systemd/system/shishya-dbus.service <<'UNIT'
@@ -168,6 +178,31 @@ WorkingDirectory=/opt/shishya/vm/shell
 ExecStart=/usr/bin/python3 /opt/shishya/vm/shell/desktop.py
 Restart=always
 RestartSec=2
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+# Create the LibreOffice profile once, then silence its welcome dialogs. Doing
+# it at provisioning time means the first launch anyone sees is already quiet.
+sudo -u clone env DISPLAY=:0 DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/shishya-bus \
+  timeout 90 libreoffice --headless --terminate_after_init >/dev/null 2>&1 || true
+sudo -u clone python3 /opt/shishya/vm/lo-quiet.py || true
+
+# Keep LibreOffice warm. Cold, it takes about 45 seconds to put a window on
+# screen; with the process already resident it is about two. Opening a file
+# the clone just produced is the moment someone is watching, and the clone
+# itself will be launching Calc unattended — neither can afford the wait.
+cat > /etc/systemd/system/shishya-office.service <<'UNIT'
+[Unit]
+Description=Shishya LibreOffice warm start
+After=shishya-wm.service
+Requires=shishya-wm.service
+[Service]
+User=clone
+EnvironmentFile=/etc/shishya.env
+ExecStart=/usr/bin/libreoffice --calc --norestore --nologo
+Restart=always
+RestartSec=10
 [Install]
 WantedBy=multi-user.target
 UNIT
