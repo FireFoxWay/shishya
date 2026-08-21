@@ -1,87 +1,182 @@
+<div align="center">
+
 # SHISHYA · शिष्य
 
-An apprentice that watches you do a job **once**, writes down what it learned in
-words you can read and correct, and then does that job — inside a sandbox, on
-your own laptop, with the network switched off.
+**An apprentice that watches you do a job once, writes down what it learned
+in words you can edit, and then does that job — on your own laptop, sandboxed,
+with the network switched off.**
+
+[![repo](https://img.shields.io/badge/github-FireFoxWay%2Fshishya-1B1B3A?logo=github)](https://github.com/FireFoxWay/shishya)
+[![runs](https://img.shields.io/badge/runs-entirely%20offline-2F7A55)](#the-network-claim)
+[![model](https://img.shields.io/badge/model-local%20via%20Ollama-3A3A7C)](#the-model)
+[![python](https://img.shields.io/badge/python-3.12%20stdlib%20only-C68414?logo=python&logoColor=white)](#run-it)
+[![sandbox](https://img.shields.io/badge/sandbox-Lima%20%C2%B7%20Apple%20vz-6E6A63)](#how-it-holds-together)
+
+</div>
+
+---
+
+## What it is
 
 It is not RPA and it is not an autonomous agent.
 
-- **RPA** (UiPath, Automator) replays coordinates. Move a window and it shatters.
-- **Autonomous agents** re-derive the task every run. Unpredictable, unauditable.
-- **Shishya** compiles your demonstration into a *plain-language procedure*, then
-  executes that procedure against the live accessibility tree. You can read what
-  it learned. You can edit what it learned. That is the whole idea.
+| | how it works | why it breaks |
+|---|---|---|
+| **RPA** (UiPath, Automator) | replays recorded coordinates | move a window, resize a column, change a value — it shatters |
+| **Autonomous agents** | re-derive the task from scratch each run | unpredictable, unauditable, and confidently wrong |
+| **Shishya** | compiles your demonstration into a **plain-language procedure**, then executes it against the live accessibility tree | you can read what it learned, and correct it |
+
+That middle artefact is the whole idea. A lesson comes out looking like this,
+and you can edit any line:
+
+```
+1. Open the applicant PDF from the intake folder
+2. Read the applicant's name, ID number, and district
+3. In the registry spreadsheet, find the row matching that ID
+4. If the district doesn't match, flag it and stop
+5. Otherwise mark the row verified and save
+```
+
+Not `click at (412, 890)`. A clerk can read that. So can a judge.
 
 ---
 
 ## Run it
 
 ```bash
-brew install lima                                  # once
-limactl start --tty=false --name=shishya vm/lima.yaml   # first boot: slow
-python3 serve.py                                   # → http://localhost:8200
+brew install lima                                       # once
+limactl start --tty=false --name=shishya vm/lima.yaml    # first boot: slow
+./demo.sh                                                # everything, ready
 ```
 
-The control panel shows the clone's screen, the permission ledger, and the
-sandbox controls.
+Then open <http://localhost:8200>.
+
+`./demo.sh` brings the whole stack up in dependency order and is the thing to
+run when something looks wrong. It exists because a dead Xvfb presents as
+"input is broken" rather than "there is no display" — every symptom points at
+the wrong layer, and guessing which component failed wastes the time you do
+not have. `./demo.sh reset` also rolls the sandbox back to clean.
+
+---
+
+## What the clone has
+
+An empty desktop with an **Apps** button in the bottom-left corner.
+
+| | |
+|---|---|
+| **Files** | browse Work, Inbox, Training Data, Lessons |
+| **Inbox** | files sent in from the host — the only way in |
+| **Training Data** | drop in any document, then ask about it |
+| **Shishya** | teach a lesson, read it, edit it, run it |
+| **Make a Document** | describe what you need; get a real `.xlsx`, `.docx` or `.pptx` |
+| **Sheets** | open and edit spreadsheets instantly |
+| **LibreOffice Calc / Writer** | the real thing, warm-started |
+| **Activity** | the permission ledger, seen from inside |
+| **Settings** | wallpaper, accent, icon size — applied live |
+
+Shut down is at the bottom of the Apps menu rather than being the corner
+button itself. The corner is where a hand goes without looking, and that
+should not be the control that ends the session.
+
+---
+
+## How it holds together
+
+```
+YOUR MAC                          │  THE SANDBOX
+                                  │
+  control panel  (browser)        │    Xvfb + openbox      1440×900, frozen
+  serve.py       stdlib only      │    AT-SPI tree         widget names, not pixels
+  Ollama         on the GPU       │    LibreOffice         warm, gtk3, accessible
+  shared/        the only way in  │    recorder → executor runs as `clone`, no sudo
+                                  │
+                            hypervisor
+```
+
+Exactly three things cross that line: **the screen out** (`:6080`), **the
+model in** (`:11434`), and **one shared folder** (virtiofs). Nothing else.
+
+### Three things that are load-bearing
+
+**The mount list is the security model.** The clone cannot read `~/Documents`
+because it is not mounted — not because we check a path somewhere. Grant a
+folder by adding a line to `vm/lima.yaml`; revoke it by deleting the line.
+
+**The accessibility tree, not pixels.** The executor resolves "the field
+labelled *District*" instead of guessing at a screen region. LibreOffice
+exposes its grid cell by cell — `A1`, `B1`, `C1` — so a procedure can name a
+cell the way a person would. If a recording comes back empty, run
+`python3 vm/tree.py` inside the sandbox: that is the tool for it.
+
+**The display resolution is frozen at 1440×900.** Recorded traces reference
+on-screen layout. Changing the resolution after recording starts invalidates
+every trace already captured.
+
+### The model
+
+Runs on the **host** via Ollama, reached from inside at
+`host.lima.internal:11434`. Deliberately not inside the VM: a model on
+emulated CPU instead of the Apple Silicon GPU is slow enough to sink a live
+demonstration.
+
+### The network claim
+
+`host/vm.py:egress(True)` drops all outbound traffic from the sandbox except
+the host's model, applied inside the guest where the clone has no sudo and
+cannot lift it. Verified: `github.com` blocked, `1.1.1.1` blocked, the model
+still answering.
+
+The indicator in the panel is **measured** on every poll by reading nftables
+in the guest — it has three states, because *unknown* is its own answer when
+the sandbox is down. It used to be a variable initialised to `true`, which
+displayed `LOCKED` while nothing was actually blocked.
+
+### The undo button
+
+Whole-VM snapshots, so a rollback also catches the app that had a document
+open and unsaved.
+
+Not `limactl snapshot` — that is unimplemented for the `vz` driver, which
+stores a raw disk. macOS offers something better: the disk lives on APFS, so
+`cp -c` clones it copy-on-write. A 3.2 GB image clones in about **4
+milliseconds** and costs no extra space until blocks diverge.
 
 ---
 
 ## Layout
 
 ```
-vm/lima.yaml      the sandbox — its mount list IS the security boundary
-vm/provision.sh   builds the clone's desktop: Xvfb, openbox, x11vnc, AT-SPI
-host/vm.py        lima wrapper — snapshot, rollback, egress lock
-host/ledger.py    append-only audit log
-serve.py          control panel server + JSON API
-web/              the panel itself — plain ES modules, no build step
-shared/           the only writable window between host and clone
+demo.sh              bring everything to a known-good state
+serve.py             control panel server + JSON API
+host/vm.py           lima wrapper: snapshot, rollback, egress lock
+host/ledger.py       append-only audit log, including refusals
+host/synth.py        trace → editable plain-language procedure
+vm/lima.yaml         the sandbox — its mount list IS the boundary
+vm/provision.sh      the clone's desktop: Xvfb, openbox, VNC, AT-SPI
+vm/recorder.py       records AT-SPI events, not mouse coordinates
+vm/locate.py         find a control by name → a point on screen
+vm/tree.py           dump the accessibility tree
+vm/shell/            the desktop and its apps
+web/                 the control panel — plain ES modules, no build step
 ```
 
----
-
-## Three things that are load-bearing
-
-**The mount list is the security model.** The clone cannot read
-`~/Documents` because it is not mounted, not because we check a path
-somewhere. Grant a folder by adding a line to `vm/lima.yaml`; revoke it by
-deleting the line. Nothing else on the laptop exists as far as the clone is
-concerned.
-
-**The accessibility tree, not pixels.** `provision.sh` turns AT-SPI on so the
-executor can resolve "the field labelled *District*" instead of guessing at a
-screen region. Pixels are the fallback. If the tree comes back empty, check
-`GTK_MODULES=gail:atk-bridge` survived in `shishya-wm.service`.
-
-**The display resolution is frozen at 1440×900.** Recorded traces reference
-on-screen layout. Changing the resolution after recording starts invalidates
-every trace already captured.
+Stdlib Python and plain ES modules throughout. Nothing that has to resolve a
+dependency at a demo table.
 
 ---
 
-## The undo button
+## Status
 
-Snapshots are whole-VM, not file-level — so rolling back also catches the app
-that had a document open and unsaved.
+**Works.** Sandbox, clone's desktop, take-the-wheel, APFS snapshot and
+rollback, permission ledger, egress lock, file transfer from the host,
+document Q&A over dropped files, document generation (`.xlsx` / `.docx` /
+`.pptx`), spreadsheet editing, LibreOffice as a first-class app, procedure
+synthesis from a trace.
 
-```bash
-limactl snapshot create shishya --tag clean
-limactl snapshot apply  shishya --tag clean
-```
+**Not built yet.** The **executor** — it learns a procedure and writes it
+down, but does not yet perform one. That is the largest remaining piece.
 
-## The network claim
-
-`host/vm.py:egress(True)` drops all outbound traffic from the sandbox except
-the host's Ollama. Applied inside the guest, where the clone has no sudo and
-therefore cannot lift it. The demo claim is "nothing left this laptop", so it
-should be true rather than promised.
-
----
-
-## Model
-
-Runs on the **host** via Ollama, reached from inside at
-`host.lima.internal:11434`. Deliberately not inside the VM: a model running on
-emulated CPU instead of the Apple Silicon GPU is slow enough to sink a live
-demo.
+**Known.** The recorder needs its noise filter verified against a real
+demonstration; the taskbar clock used to register as typing, which is fixed
+but untested end to end.
