@@ -38,8 +38,22 @@ they we what which who whom when where how why""".split())
 
 
 def terms(text):
-    return [w for w in re.findall(r"[a-z0-9]+", text.lower())
-            if w not in STOP and len(w) > 1]
+    """Words worth matching on, with plurals folded to the singular.
+
+    Without this, "which supplier gives us the HDMI cables" missed every HDMI
+    Cable row: the sheet says "Cable" and the question said "cables", so only
+    one term landed and the row filter discarded them all. Crude — it would
+    fold "bus" to "bu" if not for the length guard — but the alternative is a
+    stemmer, and the failure it prevents is worse than the ones it causes.
+    """
+    out = []
+    for w in re.findall(r"[a-z0-9]+", text.lower()):
+        if w in STOP or len(w) < 2:
+            continue
+        if len(w) > 3 and w.endswith("s") and not w.endswith("ss"):
+            w = w[:-1]
+        out.append(w)
+    return out
 
 
 class Library:
@@ -127,9 +141,17 @@ class Library:
             scored = []
             for row in rows:
                 cells = set(terms(row))
-                if not (rare & cells):
+                hit_rare = rare & cells
+                if not hit_rare:
                     continue
-                scored.append((len(wanted & cells), len(rare & cells), row))
+                # Two words must land, not one. Asked whether a student with
+                # 68% attendance may sit an exam, a single coincidental "68"
+                # in an inventory sheet was enough to drag thirty product rows
+                # into a question about school policy. An identifier like
+                # PRD-1031 still qualifies — it is two terms, "prd" and "1031".
+                if len(wanted & cells) < 2:
+                    continue
+                scored.append((len(wanted & cells), len(hit_rare), row))
             if not scored:
                 continue
 
@@ -172,7 +194,18 @@ class Library:
             if score > 0:
                 scored.append((score, i))
         scored.sort(reverse=True)
-        return [self.chunks[i] for _, i in scored[:k]]
+        if not scored:
+            return []
+
+        # Drop the weak tail. Asked which supplier provides HDMI cables, the
+        # search was returning two blocks of an unrelated macOS-versus-Windows
+        # PDF simply because they were the next best of a bad lot — nearly
+        # 3,000 characters the model then has to read and reason past. A
+        # passage worth a fifth of the best one is noise, and noise is what
+        # what makes it think until it runs out of room.
+        best = scored[0][0]
+        keep = [(score, i) for score, i in scored[:k] if score >= best * 0.4]
+        return [self.chunks[i] for _, i in keep]
 
 
 # ─── asking vs asking-for ───────────────────────────────────────────────────

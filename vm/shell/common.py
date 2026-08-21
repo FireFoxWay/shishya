@@ -91,8 +91,11 @@ def ask(prompt, system=None, schema=None, timeout=600, budget=None, job=None):
         if not answer:
             # It thought until it ran out of room. Once more, with more room.
             answer = once(body["options"]["num_predict"] * 2)
-        return answer or ("I ran out of room working that out. Ask me something "
-                          "narrower and I'll get there.")
+        return answer or (
+            "I thought my way through that without reaching an answer — it was "
+            "too broad to settle. Ask about one thing at a time and I'll get "
+            "there. If you want a number counted across the whole sheet, ask "
+            "me to work it out and I'll write a program instead.")
     except urllib.error.URLError as e:
         raise RuntimeError(
             f"can't reach the model on the host ({e}). If the egress lock is "
