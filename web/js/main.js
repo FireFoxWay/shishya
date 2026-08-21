@@ -10,7 +10,8 @@ import { api } from "./api.js";
 const $ = id => document.getElementById(id);
 const VERDICT_CLASS = { allow: "ok", deny: "no", info: "" };
 
-let netLocked = null;      // unknown until the sandbox is asked
+let netLocked = null;
+let lastStatus = null;     // so the rollback prompt can name the snapshot      // unknown until the sandbox is asked
 let wheel = true;           // interactive from the start
 
 /* ─── logging ────────────────────────────────────────────────────────────── */
@@ -63,6 +64,7 @@ function paintLedger(entries) {
 }
 
 function paintStatus(s) {
+  lastStatus = s;
   /* Egress comes from the sandbox's own firewall, not from a variable we set
      when we last pressed the button. An indicator that reports a state it
      never checked is worse than no indicator on a panel whose whole promise
@@ -142,7 +144,14 @@ $("btnStop").onclick   = e => guard(e.target, "stop",       api.stop);
 $("btnSnap").onclick   = e => guard(e.target, "snapshot",   () => api.snapshot("clean"));
 
 $("btnRoll").onclick = e => {
-  if (!confirm("Roll back the sandbox?\n\nEverything the clone has done since the last clean mark is discarded.")) return;
+  /* Say what you are rolling back TO. A snapshot taken before the sandbox was
+     built does not undo the clone's work — it wipes the machine, which is
+     exactly what happened once. The date makes that visible before you commit. */
+  const taken = lastStatus?.snapshot_taken;
+  const when = taken ? `taken ${taken}` : "no snapshot has been marked";
+  if (!confirm(`Roll the sandbox back to the clean mark (${when})?\n\n` +
+               `Everything the clone has done since then is discarded.\n\n` +
+               `If that mark is older than the apps, this wipes them too.`)) return;
   guard(e.target, "rollback", () => api.rollback("clean"));
 };
 

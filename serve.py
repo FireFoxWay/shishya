@@ -135,6 +135,7 @@ class Handler(SimpleHTTPRequestHandler):
                 "vm": state,
                 "ledger": ledger.summary(),
                 "snapshots": vm.snapshots() if state["state"] != "absent" else [],
+                "snapshot_taken": vm._snapshot_age(),
                 # Measured, never assumed. Unknown when the VM is down, because
                 # "locked" would be a claim we cannot support.
                 "egress": vm.egress_state() if live else {"locked": None,

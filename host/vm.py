@@ -206,7 +206,23 @@ def snapshot(tag=CLEAN_TAG):
     _clone(DISK, target)
     if was_running:
         start()
+        _relock_if_needed()
     return {"tag": tag, "at": time.time(), "bytes": target.stat().st_size}
+
+
+def _relock_if_needed():
+    """Re-apply the egress lock after anything that restarts the VM.
+
+    nftables rules live in memory, so a stop/start silently drops them. The
+    indicator then correctly reports OPEN — which is honest, and is exactly
+    the wrong thing to discover mid-demonstration. Anything that cycles the
+    VM re-applies the lock itself.
+    """
+    try:
+        if not egress_state().get("locked"):
+            egress(True)
+    except Exception:
+        pass
 
 
 def rollback(tag=CLEAN_TAG):
@@ -220,7 +236,16 @@ def rollback(tag=CLEAN_TAG):
     _clone(src, DISK)
     if was_running:
         start()
-    return {"tag": tag, "at": time.time()}
+        _relock_if_needed()
+    return {"tag": tag, "at": time.time(), "snapshot_taken": _snapshot_age(tag)}
+
+
+def _snapshot_age(tag=CLEAN_TAG):
+    """When the snapshot was taken, so a rollback is not a leap in the dark."""
+    path = SNAPS / f"{tag}.disk"
+    if not path.exists():
+        return None
+    return time.strftime("%d %b %H:%M", time.localtime(path.stat().st_mtime))
 
 
 def snapshots():
