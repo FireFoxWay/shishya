@@ -265,6 +265,27 @@ class Desktop(Gtk.Window):
         self.canvas.queue_draw()
         return True
 
+    def set_busy(self, busy):
+        """Stop animating while the model is working.
+
+        The sandbox has four cores and the model wants all of them. Drawing
+        4,200 points fourteen times a second is affordable when nothing else
+        is happening and rude when an answer is being waited on, so the timer
+        is removed for the duration.
+
+        The galaxy object is kept — rebuilding it means regenerating every
+        point, and the picture would visibly flicker each time somebody asked
+        a question. Frozen mid-turn it just looks still.
+        """
+        if self.galaxy is None:
+            return
+        if busy and self.ticker is not None:
+            GLib.source_remove(self.ticker)
+            self.ticker = None
+        elif not busy and self.ticker is None:
+            import galaxy
+            self.ticker = GLib.timeout_add(int(1000 / galaxy.FPS), self._tick)
+
     def relabel(self, look):
         self.set_live(look.get("wallpaper") == "galaxy")
         self.tag.set_text(look["wallmark"])
@@ -473,6 +494,16 @@ def main():
             state["look"] = look
             apply_look(look)
             desktop.relabel(look)
+
+        # Same file the taskbar pill reads, so there is one source of truth
+        # for "the model is working" rather than two that can disagree.
+        try:
+            busy = (SHARED / ".state").read_text().strip() == "working"
+        except OSError:
+            busy = False
+        if busy != state.get("busy"):
+            state["busy"] = busy
+            desktop.set_busy(busy)
         return True
 
     follow()

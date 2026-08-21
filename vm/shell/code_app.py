@@ -229,6 +229,9 @@ class CodeApp(Gtk.Window):
         self.runbtn.set_sensitive(False)
         self.show("Running…\n")
         self.say("Running…")
+        # Running a script competes for the same cores as the model, so the
+        # desktop should stand down for this too — not only for generation.
+        common.set_state("working")
         self.running = True
         threading.Thread(target=self._run, args=(code,), daemon=True).start()
 
@@ -261,6 +264,7 @@ class CodeApp(Gtk.Window):
     def ran(self, out, note):
         self.show(out)
         self.say(note)
+        common.set_state("idle")
         self.runbtn.set_sensitive(True)
         self.running = None
         return False

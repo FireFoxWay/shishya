@@ -205,6 +205,7 @@ class ModelsApp(Gtk.Window):
             return self.say("Pick one from the list below first.")
         name = model[it][0]
         self.say(f"Downloading {name} — this needs the network unlocked.")
+        common.set_state("working")
         threading.Thread(target=self._pull, args=(name,), daemon=True).start()
 
     def _pull(self, name):
@@ -245,6 +246,7 @@ class ModelsApp(Gtk.Window):
 
     def done(self, message):
         self.say(message)
+        common.set_state("idle")
         self.reload()
         return False
 
