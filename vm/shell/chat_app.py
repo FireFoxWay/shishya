@@ -166,6 +166,9 @@ class ChatApp(Gtk.Window):
         box.pack_start(label, False, False, 0)
 
         body = Gtk.Label(xalign=0, label=text)
+        # Named so the panel can read replies back without mistaking the
+        # user's own message — every bubble is a label otherwise.
+        body.get_accessible().set_name("reply" if who != "you" else "yours")
         body.set_line_wrap(True)
         body.set_line_wrap_mode(Pango.WrapMode.WORD_CHAR)
         body.set_selectable(True)
@@ -306,9 +309,9 @@ class ChatApp(Gtk.Window):
         file is exact, and the code is on screen to be checked.
         """
         listing = describe_material()
-        code = strip_fences(common.ask(
+        code = repair_paths(strip_fences(common.ask(
             f"{listing}\n\nWrite a Python script that: {brief}",
-            system=CODE_SYSTEM, budget=6144))
+            system=CODE_SYSTEM, budget=6144)))
         if not code.strip() or code.lstrip().startswith("I ran out of room"):
             return "I couldn't write a program for that. Try narrowing it down."
 
@@ -363,6 +366,35 @@ def describe_material():
         lines.append(entry)
     return ("These files exist — use these exact paths and column names:\n"
             + "\n".join(lines)) if lines else "There are no files yet."
+
+
+def repair_paths(code):
+    """Point filenames at files that exist.
+
+    Given "01_20Retail_20Inventory.xlsx" the model wrote
+    "01_20Retail_Inventory.xlsx" — one fragment dropped. The script then fails
+    on a missing file, which reads as the whole tool being broken rather than
+    as a typo. Any quoted name ending in a document extension that does not
+    exist is matched against the real ones and replaced when there is a clear
+    best match.
+    """
+    import difflib
+    import re
+
+    real = [p.name for p in common.TRAINING.iterdir() if p.is_file()]
+    real += [p.name for p in common.WORK.iterdir() if p.is_file()] if common.WORK.exists() else []
+    if not real:
+        return code
+
+    def swap(m):
+        quote, name = m.group(1), m.group(2)
+        if name in real:
+            return m.group(0)
+        close = difflib.get_close_matches(name, real, n=1, cutoff=0.6)
+        return f"{quote}{close[0]}{quote}" if close else m.group(0)
+
+    return re.sub(r"(['\"])([^'\"/]+\.(?:xlsx|xlsm|csv|docx|pptx|pdf|txt|md))\1",
+                  swap, code)
 
 
 def strip_fences(text):

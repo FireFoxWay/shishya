@@ -18,6 +18,7 @@ import re
 import sys
 import time
 import traceback
+import urllib.parse
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -56,7 +57,12 @@ def safe_filename(raw):
     traversal, and keep it to characters that cannot mean anything to a
     shell. A dropped file must never be able to choose where it lands.
     """
-    name = os.path.basename(raw or "").strip()
+    # The browser sends the name percent-encoded, so a file called
+    # "01 Retail Inventory.xlsx" arrives as "01%20Retail%20Inventory.xlsx" and
+    # the sanitiser below turned the %20 into _20. Decode first, then treat
+    # the result as hostile as before.
+    raw = urllib.parse.unquote(raw or "")
+    name = os.path.basename(raw).strip()
     name = re.sub(r"[^A-Za-z0-9._ ()-]", "_", name)
     name = name.lstrip(".") or "dropped-file"
     return name[:120]
