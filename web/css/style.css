@@ -154,3 +154,30 @@ body {
   color: var(--accent);
 }
 .drop.busy { border-color: var(--warn); color: var(--warn); }
+
+/* ─── control state ─────────────────────────────────────────────────────── */
+/* Deliberately loud. Losing input is the single most confusing state this
+   panel can be in — everything simply stops responding with no explanation —
+   so which state you are in has to be readable without looking for it. */
+
+.wheel {
+  padding: 6px 14px;
+  border-radius: 3px;
+  font: inherit;
+  font-size: 10px;
+  letter-spacing: .1em;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.wheel.on {
+  background: var(--ok);
+  border-color: var(--ok);
+  color: #04220f;
+  font-weight: 700;
+}
+.wheel.off {
+  background: transparent;
+  border-color: var(--warn);
+  color: var(--warn);
+}
+.wheel.off:hover { background: rgba(251,191,36,.14); }

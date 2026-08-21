@@ -108,6 +108,7 @@ Description=Shishya virtual display
 [Service]
 User=clone
 EnvironmentFile=/etc/shishya.env
+StartLimitIntervalSec=0
 ExecStart=/usr/bin/Xvfb :0 -screen 0 1440x900x24 -nolisten tcp
 Restart=always
 [Install]
@@ -136,6 +137,7 @@ Requires=shishya-wm.service
 [Service]
 User=clone
 EnvironmentFile=/etc/shishya.env
+StartLimitIntervalSec=0
 # -shared so you can watch while the agent drives: take-the-wheel depends on
 # host and agent holding the same session at once, not taking turns.
 ExecStart=/usr/bin/x11vnc -display :0 -forever -shared -nopw -rfbport 5900 -noxdamage
@@ -207,8 +209,30 @@ RestartSec=10
 WantedBy=multi-user.target
 UNIT
 
+# The desktop as a service, so it is restarted rather than remembered.
+# Started by hand it stacked up silently — several desktops and several
+# taskbars at once, each drawing over the last. systemd keeps exactly one.
+cat > /etc/systemd/system/shishya-desktop.service <<'UNIT'
+[Unit]
+Description=Shishya desktop shell
+After=shishya-wm.service
+Requires=shishya-wm.service
+[Service]
+User=clone
+EnvironmentFile=/etc/shishya.env
+WorkingDirectory=/opt/shishya/vm/shell
+ExecStart=/usr/bin/python3 /opt/shishya/vm/shell/desktop.py
+Restart=always
+RestartSec=3
+# Never give up. The default start limit makes systemd stop retrying after a
+# few quick failures, which is precisely when it is needed most.
+StartLimitIntervalSec=0
+[Install]
+WantedBy=multi-user.target
+UNIT
+
 systemctl daemon-reload
-systemctl enable --now shishya-dbus shishya-display shishya-atspi shishya-wm shishya-vnc shishya-novnc shishya-desktop
+systemctl enable --now shishya-dbus shishya-display shishya-atspi shishya-wm shishya-vnc shishya-novnc shishya-desktop shishya-desktop
 
 # GTK apps check this before exposing anything to AT-SPI.
 sudo -u clone env DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/shishya-bus \

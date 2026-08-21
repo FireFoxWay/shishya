@@ -113,6 +113,11 @@ async function refresh() {
 /* The VNC session is shared, so handing over control is only a matter of
    dropping view_only — the clone keeps its session either way. */
 
+/* The button used to be labelled with the action rather than the state:
+   while you were in control it read "HAND IT BACK", which reads as an
+   instruction to press it. Pressing it then switched your input off, and the
+   sandbox appeared frozen. It now states what is true right now, and says
+   underneath what pressing it would do. */
 function setWheel(on) {
   wheel = on;
   const f = $("vnc");
@@ -120,9 +125,13 @@ function setWheel(on) {
   url.searchParams.set("view_only", on ? "0" : "1");
   url.searchParams.set("reconnect", "1");
   f.src = url.toString();
-  $("btnWheel").classList.toggle("on", on);
-  $("btnWheel").textContent = on ? "HAND IT BACK" : "TAKE THE WHEEL";
-  log(on ? "you have the wheel" : "wheel returned to the clone");
+  const b = $("btnWheel");
+  b.classList.toggle("on", on);
+  b.classList.toggle("off", !on);
+  b.textContent = on ? "● YOU HAVE CONTROL" : "○ WATCHING ONLY — CLICK TO CONTROL";
+  b.title = on ? "Click to stop sending your clicks to the sandbox"
+               : "Click to send your clicks and typing to the sandbox";
+  log(on ? "you have control of the sandbox" : "your input is no longer being sent");
 }
 
 /* ─── wiring ─────────────────────────────────────────────────────────────── */

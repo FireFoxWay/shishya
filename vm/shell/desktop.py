@@ -344,10 +344,16 @@ class Taskbar(Gtk.Window):
         menu.append(power)
 
         menu.show_all()
-        # Anchored to the button's top-left so it rises out of the corner
-        # rather than appearing over the pointer.
-        menu.popup_at_widget(button, Gdk.Gravity.NORTH_WEST,
-                             Gdk.Gravity.SOUTH_WEST, None)
+
+        # Positioned by hand. popup_at_widget anchors against the parent
+        # window, and the taskbar is a DOCK — the menu opened somewhere
+        # off-screen and the whole launcher looked dead, when in fact it had
+        # worked every time.
+        def place(_menu, *_args):
+            _, height = menu.get_preferred_height()
+            return 0, screen_size()[1] - TASKBAR_H - height, True
+
+        menu.popup(None, None, place, None, 0, Gtk.get_current_event_time())
 
     def on_power(self, _btn):
         d = Gtk.MessageDialog(
