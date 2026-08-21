@@ -119,10 +119,19 @@ def ask(prompt, model=DEFAULT_MODEL, temperature=0.2):
                                  {"Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=600) as r:
-            return json.loads(r.read())["response"]
+            return _strip_think(json.loads(r.read())["response"])
     except urllib.error.URLError as e:
         raise SynthError(f"local model unreachable at {OLLAMA} — is ollama running? ({e})")
 
+
+
+def _strip_think(text):
+    """deepseek-r1 emits <think>...</think> even with think disabled, and the
+    reasoning is not the answer — showing it to a user reads as the thing
+    malfunctioning. An unclosed tag means the reply was truncated mid-thought,
+    so there is no answer to salvage."""
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.S)
+    return re.sub(r"^.*?<think>.*$", "", text, flags=re.S).strip() or text.strip()
 
 # ─── trace → something a model can read ─────────────────────────────────────
 

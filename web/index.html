@@ -35,7 +35,10 @@
     <!-- noVNC is served from inside the VM itself (port 6080, forwarded).
          An iframe until the recorder needs raw framebuffer access. -->
     <div class="screen">
-      <iframe id="vnc" title="clone display"
+      <!-- allow=fullscreen: noVNC's own toolbar has a fullscreen button, and
+           without this the iframe's permissions policy blocks it and noVNC
+           shows a red error card over the clone's screen. -->
+      <iframe id="vnc" title="clone display" allow="fullscreen"
               src="http://localhost:6080/vnc.html?autoconnect=1&resize=scale&view_only=1"></iframe>
       <div id="screenMsg" class="msg">sandbox not running</div>
     </div>

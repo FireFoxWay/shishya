@@ -22,8 +22,9 @@ apt-get install -y --no-install-recommends \
   xvfb x11vnc openbox xterm x11-utils xdotool scrot \
   novnc websockify \
   python3-pip python3-venv python3-tk \
+  python3-gi python3-gi-cairo gir1.2-gtk-3.0 \
   at-spi2-core python3-pyatspi gir1.2-atspi-2.0 \
-  libreoffice-calc libreoffice-writer evince \
+  libreoffice-calc libreoffice-writer evince poppler-utils \
   fonts-dejavu-core
 
 # ─── The clone's own account ────────────────────────────────────────────────
@@ -39,7 +40,10 @@ chown clone:clone /home/clone
 
 # NOT /home/clone/shared — that is the virtiofs mountpoint, and chowning a
 # virtiofs mount fails with EPERM. Its ownership comes from the host side.
-install -d -o clone -g clone /home/clone/.config/openbox
+# dconf needs its directory to exist before gsettings can write anything,
+# and without gsettings the toolkit-accessibility flag stays false — which
+# leaves GTK apps registering with AT-SPI while exposing no widgets at all.
+install -d -o clone -g clone /home/clone/.config/openbox /home/clone/.config/dconf
 
 # ─── Display, WM, VNC, noVNC ────────────────────────────────────────────────
 # 1440x900 to match a laptop screen: taught procedures reference on-screen
@@ -55,7 +59,7 @@ install -d -o clone -g clone /home/clone/.config/openbox
 cat > /etc/shishya.env <<'ENV'
 DISPLAY=:0
 DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/shishya-bus
-GTK_MODULES=gail:atk-bridge
+GTK_MODULES=atk-bridge
 QT_ACCESSIBILITY=1
 NO_AT_BRIDGE=0
 GTK_A11Y=atspi
@@ -146,6 +150,12 @@ systemctl enable --now shishya-dbus shishya-display shishya-atspi shishya-wm shi
 
 # GTK apps check this before exposing anything to AT-SPI.
 sudo -u clone env DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/shishya-bus \
-  gsettings set org.gnome.desktop.interface toolkit-accessibility true 2>/dev/null || true
+  gsettings set org.gnome.desktop.interface toolkit-accessibility true
+
+# Loud on purpose. If this is false the accessibility tree is empty, the
+# recorder captures nothing, and the failure is silent everywhere else.
+echo -n "shishya: toolkit-accessibility = "
+sudo -u clone env DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/shishya-bus \
+  gsettings get org.gnome.desktop.interface toolkit-accessibility
 
 echo "shishya: desktop up on :0 — noVNC at http://localhost:6080/vnc.html"
