@@ -39,7 +39,7 @@ def set_state(state):
         pass
 
 
-def ask(prompt, system=None, schema=None, timeout=600):
+def ask(prompt, system=None, schema=None, timeout=600, budget=None):
     body = {
         "model": MODEL,
         "prompt": prompt,
@@ -58,6 +58,10 @@ def ask(prompt, system=None, schema=None, timeout=600):
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return _strip_think(json.loads(r.read())["response"])
 
+    if budget:
+        # Code needs more room than prose: the model reasons first, and a
+        # script that stops halfway is worse than no script.
+        body["options"]["num_predict"] = budget
     try:
         answer = once(body["options"]["num_predict"])
         if not answer:

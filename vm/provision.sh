@@ -23,7 +23,7 @@ apt-get install -y --no-install-recommends \
   novnc websockify \
   python3-pip python3-venv python3-tk \
   python3-gi python3-gi-cairo gir1.2-gtk-3.0 \
-  python3-openpyxl python3-docx \
+  python3-openpyxl python3-docx python3-pandas \
   at-spi2-core python3-pyatspi gir1.2-atspi-2.0 \
   libreoffice-calc libreoffice-writer libreoffice-gtk3 evince poppler-utils \
   fonts-dejavu-core

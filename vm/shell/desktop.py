@@ -137,6 +137,7 @@ MENU = [
     ("Shishya",           "system-run",           lambda: app("shishya_app.py")),
     (None, None, None),
     ("Make a Document",   "x-office-document",    lambda: app("make_app.py")),
+    ("Code",              "text-x-script",        lambda: app("code_app.py")),
     ("Sheets",            "x-office-spreadsheet", lambda: app("sheet_app.py")),
     ("LibreOffice Calc",  "x-office-spreadsheet", lambda: office("--calc")),
     ("LibreOffice Writer", "x-office-document",   lambda: office("--writer")),

@@ -42,6 +42,7 @@ LAUNCHABLE = {
     "activity_app.py": "Activity",
     "make_app.py": "Make a Document",
     "inbox_app.py": "Inbox",
+    "code_app.py": "Code",
 }
 
 
