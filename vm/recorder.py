@@ -44,6 +44,20 @@ EVENTS = [
 ]
 
 
+def source_name(acc):
+    try:
+        return acc.name or ""
+    except Exception:
+        return ""
+
+
+def role_of(acc):
+    try:
+        return acc.getRoleName()
+    except Exception:
+        return ""
+
+
 def describe(acc):
     """One accessible → the fields a procedure needs to name it again later."""
     if acc is None:
@@ -91,6 +105,11 @@ class Recorder:
         (self.dir / "steps").mkdir(parents=True, exist_ok=True)
         self.trace = open(self.dir / "trace.jsonl", "a", encoding="utf-8")
         self.n = 0
+        self.last = None          # for collapsing repeated events
+        self.buffer = ""          # keystrokes not yet committed
+        self.typing_at = None     # where this typing began
+        self.last_focus = None    # most recent focused control
+        self.typed_at = 0.0       # when the last keystroke arrived
         self.write({"kind": "meta", "label": label, "run": self.run,
                     "started": time.time(), "screen": "1440x900"})
 
@@ -113,6 +132,16 @@ class Recorder:
                 return
             if self.is_noise(e):
                 return
+            # Moving away ends whatever was being typed. But the first
+            # keystroke in a spreadsheet cell opens an editor, which fires its
+            # own focus event — flushing on that split every value after its
+            # first character. Anything within a moment of a keystroke is the
+            # editor opening, not the person moving on.
+            if (e.type == "object:state-changed:focused" and self.buffer
+                    and time.time() - self.typed_at > 1.2):
+                self.flush()
+            if e.type == "object:state-changed:focused":
+                self.last_focus = describe(e.source) or self.last_focus
             self.n += 1
             self.write({
                 "kind": "step",
@@ -139,15 +168,23 @@ class Recorder:
 
     CHROME = {"Taskbar"}          # our own shell furniture, never the task
 
+    # Applications whose text widgets do not advertise themselves as editable
+    # even while you are typing into them. LibreOffice's cell editor is the
+    # one that matters here: the editable test alone threw away every value
+    # entered into a spreadsheet, which is most of what a clerk actually does.
+    LOOSE_TEXT = ("soffice", "libreoffice")
+
     def is_noise(self, e):
         try:
             source = e.source
             if source is None:
                 return True
 
+            app = (getattr(e.host_application, "name", "") or "").lower()
+
             if e.type == "object:text-changed:insert":
-                states = source.getState()
-                if not states.contains(pyatspi.STATE_EDITABLE):
+                editable = source.getState().contains(pyatspi.STATE_EDITABLE)
+                if not editable and not any(a in app for a in self.LOOSE_TEXT):
                     return True
 
             # Anything inside the taskbar is us, not the job being taught.
@@ -157,9 +194,73 @@ class Recorder:
                     return True
                 node = node.parent
                 depth += 1
+
+            # Spreadsheets emit a selection change for every cursor movement,
+            # so a single keystroke arrives as a burst of identical events on
+            # the same grid. Only the first of a run says anything.
+            fingerprint = (e.type, source_name(source), role_of(source))
+            if fingerprint == self.last and e.type != "object:text-changed:insert":
+                return True
+            self.last = fingerprint
         except Exception:
             return True               # unreadable source is not a usable step
         return False
+
+    # ── what was typed ──────────────────────────────────────────────────────
+    # LibreOffice emits no text-changed event for cell entry — the value a
+    # clerk types into a spreadsheet, which is most of the job, simply never
+    # reaches AT-SPI. So we watch the keyboard as well and keep the text
+    # ourselves, flushing it as one step when the entry is committed.
+    #
+    # Held rather than logged per keystroke on purpose: a trace of eleven
+    # single-character events says far less than one step reading
+    # typed "No - below 65%" into Cell I4.
+
+    COMMIT = {"Return", "KP_Enter", "Tab", "ISO_Left_Tab", "Escape"}
+
+    # X reports these by name rather than as the character they produce, so a
+    # plain printable-character test drops them. Space is the one that matters:
+    # without it every recorded value came out as one run-on word.
+    NAMED = {"space": " ", "minus": "-", "period": ".", "comma": ",",
+             "slash": "/", "percent": "%", "underscore": "_", "plus": "+",
+             "equal": "=", "colon": ":", "semicolon": ";", "apostrophe": "'",
+             "parenleft": "(", "parenright": ")", "at": "@", "numbersign": "#",
+             "ampersand": "&", "asterisk": "*", "exclam": "!", "question": "?"}
+
+    def on_key(self, event):
+        try:
+            name = event.event_string or ""
+            if name in self.COMMIT:
+                self.flush(committed=name != "Escape")
+            elif name == "BackSpace":
+                self.buffer = self.buffer[:-1]
+            else:
+                char = self.NAMED.get(name, name if len(name) == 1 and name.isprintable() else None)
+                if char is None:
+                    return False
+                self.buffer += char
+                self.typed_at = time.time()
+                if not self.typing_at:
+                    self.typing_at = self.last_focus
+        except Exception:
+            pass
+        return False              # never swallow the keystroke
+
+    def flush(self, committed=True):
+        text, where = self.buffer, self.typing_at
+        self.buffer, self.typing_at = "", None
+        if not text:
+            return
+        self.n += 1
+        self.write({
+            "kind": "step",
+            "i": self.n,
+            "t": round(time.time(), 3),
+            "event": "typed" if committed else "typed-then-cancelled",
+            "target": where,
+            "detail": text,
+            "shot": self.shot(),
+        })
 
     def close(self):
         self.write({"kind": "meta", "ended": time.time(), "steps": self.n})
@@ -179,7 +280,17 @@ def start(label):
     for ev in EVENTS:
         pyatspi.Registry.registerEventListener(rec.on_event, ev)
 
+    # preemptive=False: we are observing, not intercepting. A recorder that
+    # can swallow keystrokes would change the very thing it is recording.
+    # This binding rejects a None mask, so every modifier combination has to
+    # be named. Without shift in the list, capital letters go unrecorded.
+    modifiers = [0, 1 << pyatspi.MODIFIER_SHIFT, 1 << pyatspi.MODIFIER_SHIFTLOCK]
+    pyatspi.Registry.registerKeystrokeListener(
+        rec.on_key, mask=modifiers, kind=(pyatspi.KEY_PRESSED_EVENT,),
+        synchronous=False, preemptive=False)
+
     def bye(*_):
+        rec.flush()
         pyatspi.Registry.deregisterEventListener(rec.on_event, *EVENTS)
         rec.close()
         PIDFILE.unlink(missing_ok=True)

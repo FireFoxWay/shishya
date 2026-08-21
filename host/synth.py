@@ -172,6 +172,15 @@ def summarise(rows):
         where = f'{t.get("role","?")} "{t.get("name","")}"'.strip()
         app = s.get("app") or "?"
 
+        # The recorder assembles keystrokes into whole entries itself now, so
+        # a typed step arrives complete. LibreOffice never emits a text event
+        # for cell entry, and these are the only record of what was written.
+        if str(s["event"]).startswith("typed") and isinstance(s.get("detail"), str):
+            flush()
+            cancelled = " (then cancelled)" if s["event"].endswith("cancelled") else ""
+            lines.append(f'typed "{s["detail"]}" into {where} in {app}{cancelled}')
+            continue
+
         if s["event"] == "object:text-changed:insert" and isinstance(s.get("detail"), str):
             if buf_target and buf_target != f"{where} in {app}":
                 flush()
@@ -306,13 +315,19 @@ def validate(proc, obs):
     proc["parameters"] = kept_params
 
     # Near-duplicate steps: the model restating one action as two.
-    kept_steps, seen = [], []
+    #
+    # Compared against the previous step only, not every earlier one. Matching
+    # against all of them threw away "go to Cell I4" because "go to Cell I2"
+    # had already been seen — in a spreadsheet task nearly every step rhymes
+    # with the one before it, and the differences are the entire procedure.
+    kept_steps, previous, previous_text = [], None, ""
     for step in proc.get("steps", []):
-        key = _norm(step.get("text", ""))
-        if any(_similar(key, s) for s in seen):
-            warnings.append(f"dropped duplicate step: {step.get('text','')[:60]}")
+        text = step.get("text", "")
+        key = _norm(text)
+        if previous is not None and _similar(key, previous) and not _distinct(text, previous_text):
+            warnings.append(f"dropped duplicate step: {text[:60]}")
             continue
-        seen.append(key)
+        previous, previous_text = key, text
         kept_steps.append(step)
 
     for i, step in enumerate(kept_steps, 1):
@@ -328,6 +343,16 @@ def validate(proc, obs):
 
     proc["warnings"] = warnings
     return proc, warnings
+
+
+# Cell references, quoted values and numbers are exactly what distinguishes
+# one step from the next. Two steps carrying different ones are different
+# steps however similarly they are phrased.
+_MARKS = re.compile(r"'[^']+'|\"[^\"]+\"|\b[A-Z]{1,3}\d{1,4}\b|\b\d+%?\b")
+
+
+def _distinct(a, b):
+    return set(_MARKS.findall(a)) != set(_MARKS.findall(b))
 
 
 def _norm(text):
