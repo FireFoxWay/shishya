@@ -25,7 +25,26 @@ STATE = SHARED / ".state"
 # boundary. Inside the VM it would fall back to emulated CPU and be far too
 # slow to demo.
 HOST = "http://host.lima.internal:11434"
-MODEL = "deepseek-r1:8b"
+MODEL = "deepseek-r1:8b"          # the fallback when nothing is chosen
+
+# ─── one job, one model ─────────────────────────────────────────────────────
+# Different work wants different models, and a school should not have to hold
+# twenty gigabytes on disk to answer a question about an attendance policy.
+# Each job names a model; the Models app writes this file and the apps read it.
+ROLES = SHARED / ".models.json"
+
+
+def model_for(job):
+    """Which model does this job. Falls back rather than failing — a missing
+    or malformed file must never stop the app from answering."""
+    try:
+        import json as _json
+        chosen = _json.loads(ROLES.read_text()).get(job)
+        if chosen:
+            return chosen
+    except (OSError, ValueError):
+        pass
+    return MODEL
 
 ACCENT = "#0078d4"
 
@@ -39,9 +58,14 @@ def set_state(state):
         pass
 
 
-def ask(prompt, system=None, schema=None, timeout=600, budget=None):
+def ask_job(job, prompt, **kw):
+    """ask(), told which job it is for, so the right model answers."""
+    return ask(prompt, job=job, **kw)
+
+
+def ask(prompt, system=None, schema=None, timeout=600, budget=None, job=None):
     body = {
-        "model": MODEL,
+        "model": model_for(job) if job else MODEL,
         "prompt": prompt,
         "stream": False,
         "think": False,

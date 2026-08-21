@@ -186,7 +186,7 @@ class MakeApp(Gtk.Window):
                      f"competing ones:\n{source}\n" if source else "")
                   + "\nGive it a short, sensible filename with no extension.")
         try:
-            raw = common.ask(prompt, schema=SCHEMAS[kind])
+            raw = common.ask_job("documents", prompt, schema=SCHEMAS[kind])
             spec = json.loads(raw)
             path = WRITERS[kind](spec)
             GLib.idle_add(self.done, f"Made {path.name}\n\nIt is in Work/. "

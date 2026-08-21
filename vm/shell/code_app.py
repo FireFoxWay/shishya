@@ -185,7 +185,7 @@ class CodeApp(Gtk.Window):
 
         def work():
             try:
-                code = strip_fences(common.ask(
+                code = strip_fences(common.ask_job("code", 
                     f"{describe_files()}\n\nWrite a Python script that: {brief}",
                     system=self.SYSTEM, budget=6144))
             except RuntimeError as e:

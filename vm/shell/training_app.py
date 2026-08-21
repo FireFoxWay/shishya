@@ -358,7 +358,7 @@ class TrainingApp(Gtk.Window):
                 GLib.idle_add(self.done, self.build(kind, question, passages, sources))
                 return
             try:
-                reply = common.ask(f"PASSAGES:\n{passages}\n\nQUESTION: {question}",
+                reply = common.ask_job("answers", f"PASSAGES:\n{passages}\n\nQUESTION: {question}",
                                    system=SYSTEM)
             except RuntimeError as e:
                 reply = str(e)
@@ -377,7 +377,7 @@ class TrainingApp(Gtk.Window):
                   f"not invent competing ones:\n{passages}\n\n"
                   f"Give it a short, sensible filename with no extension.")
         try:
-            spec = json.loads(common.ask(prompt, schema=make_app.SCHEMAS[kind]))
+            spec = json.loads(common.ask_job("answers", prompt, schema=make_app.SCHEMAS[kind]))
             path = make_app.WRITERS[kind](spec)
         except (json.JSONDecodeError, KeyError) as e:
             return f"The model returned something I could not turn into a file: {e}"

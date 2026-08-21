@@ -43,6 +43,7 @@ LAUNCHABLE = {
     "make_app.py": "Make a Document",
     "inbox_app.py": "Inbox",
     "code_app.py": "Code",
+    "models_app.py": "Models",
 }
 
 
