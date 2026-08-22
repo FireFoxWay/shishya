@@ -1,20 +1,92 @@
 /* ============================================================================
    SHISHYA — control panel
-   Dark, dense, instrument-panel. You watch this for hours while the clone
-   works, so: low light, no animation, status readable at a glance.
+   ============================================================================
+
+   Apple's design language, and on this machine that is nearly free: the
+   font stack below resolves to real SF Pro on macOS, so the type is the
+   system's own rather than an impression of it.
+
+   The shape is a macOS document window — content on the left, an inspector
+   sidebar on the right. Sections are grouped rows with hairline separators,
+   controls are small and quiet, and exactly one colour carries meaning at a
+   time. Depth comes from hairlines and a single soft shadow, never from
+   heavy borders.
+
+   Every class name here already existed. This file changes how the panel
+   looks and nothing about how it works.
    ========================================================================== */
 
 :root {
-  --bg:      #0b0d10;
-  --panel:   #12161b;
-  --line:    #222a33;
-  --ink:     #c9d4de;
-  --dim:     #6b7885;
-  --ok:      #4ade80;
-  --no:      #f87171;
-  --warn:    #fbbf24;
-  --accent:  #38bdf8;
-  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: light;
+
+  /* macOS system greys */
+  --bg:        #ECECEE;      /* window background */
+  --content:   #FFFFFF;      /* the content area */
+  --sidebar:   #F5F5F7;      /* inspector, very slightly recessed */
+  --raised:    #FFFFFF;
+  --hair:      rgba(0,0,0,.10);
+  --hair-soft: rgba(0,0,0,.06);
+
+  --label:     #1D1D1F;      /* primary label */
+  --label-2:   #3C3C43;      /* secondary */
+  --label-3:   rgba(60,60,67,.60);
+  --label-4:   rgba(60,60,67,.35);
+
+  /* system colours */
+  --blue:      #007AFF;
+  --blue-deep: #0062CC;
+  --green:     #248A3D;
+  --red:       #D70015;
+  --orange:    #C93400;
+  --amber:     #B25000;
+
+  --fill:      rgba(120,120,128,.12);   /* control background */
+  --fill-hi:   rgba(120,120,128,.20);
+
+  --shadow:    0 1px 3px rgba(0,0,0,.08), 0 8px 24px -14px rgba(0,0,0,.22);
+  --radius:    7px;
+  --radius-lg: 11px;
+
+  /* -apple-system is SF Pro on a Mac. The rest are for anywhere else. */
+  --ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
+        system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg:        #1C1C1E;
+    --content:   #000000;
+    --sidebar:   #232326;
+    --raised:    #2C2C2E;
+    --hair:      rgba(255,255,255,.12);
+    --hair-soft: rgba(255,255,255,.07);
+    --label:     #F5F5F7;
+    --label-2:   #EBEBF5;
+    --label-3:   rgba(235,235,245,.60);
+    --label-4:   rgba(235,235,245,.32);
+    --blue:      #0A84FF;
+    --blue-deep: #409CFF;
+    --green:     #30D158;
+    --red:       #FF453A;
+    --orange:    #FF6961;
+    --amber:     #FF9F0A;
+    --fill:      rgba(120,120,128,.24);
+    --fill-hi:   rgba(120,120,128,.36);
+    --shadow:    0 1px 3px rgba(0,0,0,.5), 0 8px 24px -14px rgba(0,0,0,.8);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #1C1C1E; --content: #000000; --sidebar: #232326; --raised: #2C2C2E;
+  --hair: rgba(255,255,255,.12); --hair-soft: rgba(255,255,255,.07);
+  --label: #F5F5F7; --label-2: #EBEBF5;
+  --label-3: rgba(235,235,245,.60); --label-4: rgba(235,235,245,.32);
+  --blue: #0A84FF; --blue-deep: #409CFF; --green: #30D158;
+  --red: #FF453A; --orange: #FF6961; --amber: #FF9F0A;
+  --fill: rgba(120,120,128,.24); --fill-hi: rgba(120,120,128,.36);
+  --shadow: 0 1px 3px rgba(0,0,0,.5), 0 8px 24px -14px rgba(0,0,0,.8);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -24,185 +96,314 @@ body {
   display: flex;
   flex-direction: column;
   background: var(--bg);
-  color: var(--ink);
-  font: 12px/1.5 var(--mono);
-  letter-spacing: .02em;
+  color: var(--label);
+  font-family: var(--ui);
+  font-size: 13px;              /* macOS body size */
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
   overflow: hidden;
 }
 
-/* ─── top bar ───────────────────────────────────────────────────────────── */
+/* ─── toolbar ───────────────────────────────────────────────────────────── */
+/* A macOS unified toolbar: title on the left, state on the right, one
+   hairline underneath. Translucency where the browser supports it. */
 
 #topbar {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--line);
-  background: var(--panel);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 0 16px;
+  height: 52px;
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 1px solid var(--hair);
 }
-.brand { display: flex; align-items: center; gap: 10px; }
+
+.brand { display: flex; align-items: center; gap: 9px; min-width: 0; }
 .mark {
-  width: 10px; height: 10px; border-radius: 50%;
-  background: var(--accent); box-shadow: 0 0 10px var(--accent);
+  width: 11px; height: 11px; border-radius: 50%;
+  background: var(--blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent);
+  flex-shrink: 0;
 }
-.bName { font-weight: 700; letter-spacing: .18em; }
-.bTag  { color: var(--dim); font-size: 10px; letter-spacing: .14em; }
+.bName {
+  font-size: 14px; font-weight: 600; letter-spacing: -.01em;
+}
+.bTag {
+  font-size: 11px; color: var(--label-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 
-.topRight { display: flex; gap: 22px; }
-.kv { display: flex; flex-direction: column; gap: 2px; }
-.kv span { color: var(--dim); font-size: 9px; letter-spacing: .14em; }
-.kv b { font-weight: 600; }
+.topRight { display: flex; align-items: center; gap: 6px; }
 
-.ok     { color: var(--ok); }
-.no     { color: var(--no); }
-.locked { color: var(--ok); }
-.open   { color: var(--warn); }
+/* Status reads as a row of small capsules — the shape macOS uses when
+   several related states must be legible at a glance. */
+.kv {
+  display: flex; align-items: baseline; gap: 6px;
+  background: var(--fill);
+  border-radius: 6px;
+  padding: 4px 9px;
+}
+.kv span {
+  font-size: 10px; font-weight: 590; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--label-3);
+}
+.kv b {
+  font-size: 11px; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.ok, .locked { color: var(--green); }
+.no          { color: var(--red); }
+.open        { color: var(--amber); }
 
 /* ─── layout ────────────────────────────────────────────────────────────── */
 
-#stage { flex: 1; display: flex; min-height: 0; }
+#stage { flex: 1; display: flex; min-height: 0; gap: 0; }
+
 .pane { display: flex; flex-direction: column; min-height: 0; }
-.pane.grow { flex: 1; }
-.pane.col  { width: 380px; border-left: 1px solid var(--line); background: var(--panel); }
+.pane.grow { flex: 1; padding: 12px; }
+.pane.col {
+  width: 340px; flex-shrink: 0;
+  background: var(--sidebar);
+  border-left: 1px solid var(--hair);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* ─── section headers ───────────────────────────────────────────────────── */
+/* macOS sidebar headers: small, semibold, secondary colour, sentence case
+   rather than the shouty uppercase of a terminal. */
 
 .paneHead {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 14px;
-  border-bottom: 1px solid var(--line);
-  color: var(--dim); font-size: 10px; letter-spacing: .16em;
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 10px;
+  padding: 16px 15px 5px;
+  font-size: 11px; font-weight: 600;
+  letter-spacing: .02em;
+  color: var(--label-3);
+  text-transform: none;
+}
+/* Sentence case, not Title Case. The markup already carries the right
+   casing; capitalising here turned "Open on the clone's desktop" into
+   "Open On The Clone's Desktop", which is a Windows habit. */
+.paneHead span:first-child { text-transform: none; }
+
+/* The content pane's header is a toolbar strip, not a sidebar label. */
+.pane.grow .paneHead {
+  padding: 0 2px 10px;
+  font-size: 12px;
+  color: var(--label-2);
+  align-items: center;
 }
 
 /* ─── the clone's screen ────────────────────────────────────────────────── */
 
-.screen { position: relative; flex: 1; background: #000; }
+.screen {
+  position: relative; flex: 1;
+  background: #000;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--hair);
+}
 .screen iframe { width: 100%; height: 100%; border: 0; display: block; }
 .msg {
   position: absolute; inset: 0;
   display: grid; place-items: center;
-  background: #000; color: var(--dim);
-  letter-spacing: .16em; text-transform: uppercase;
+  background: var(--raised); color: var(--label-3);
+  font-size: 13px;
 }
 
-/* ─── buttons ───────────────────────────────────────────────────────────── */
+/* ─── controls ──────────────────────────────────────────────────────────── */
+/* macOS push buttons: small radius, quiet fill, one prominent style held in
+   reserve. Nothing here shouts unless it is destructive. */
 
-.tools, .controls { display: flex; flex-wrap: wrap; gap: 6px; }
-.controls { padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.tools, .controls {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 4px 15px 10px;
+}
+.pane.grow .tools { padding: 0; }
 
 .tool {
-  padding: 6px 10px;
-  border: 1px solid var(--line); border-radius: 3px;
-  background: #171d24; color: var(--ink);
-  font: inherit; font-size: 10px; letter-spacing: .1em;
+  appearance: none;
+  font-family: inherit;
+  font-size: 12px; font-weight: 500;
+  letter-spacing: 0;
+  color: var(--label);
+  background: var(--raised);
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  padding: 5px 11px;
   cursor: pointer;
+  transition: background .12s ease, border-color .12s ease;
+  white-space: nowrap;
 }
-.tool:hover:not(:disabled) { border-color: var(--accent); color: #fff; }
-.tool:disabled { opacity: .4; cursor: wait; }
-.tool.ghost  { background: transparent; color: var(--dim); }
-.tool.danger { border-color: #4a2225; color: var(--no); }
-.tool.danger:hover:not(:disabled) { border-color: var(--no); }
-.tool.on { background: var(--accent); border-color: var(--accent); color: #04202c; font-weight: 700; }
+.tool:hover:not(:disabled) { background: var(--fill); }
+.tool:active:not(:disabled) { background: var(--fill-hi); }
+.tool:disabled { opacity: .4; cursor: default; }
+.tool:focus-visible {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 28%, transparent);
+}
+
+.tool.ghost { background: transparent; color: var(--label-3); }
+.tool.ghost:hover:not(:disabled) { background: var(--fill); color: var(--label); }
+
+/* Destructive and cautionary read by colour alone; the shape stays identical
+   so the row does not become a fairground. */
+.tool.danger  { color: var(--red); }
+.tool.danger:hover:not(:disabled)  { background: color-mix(in srgb, var(--red) 10%, transparent); }
+.tool.warnish { color: var(--amber); }
+.tool.warnish:hover:not(:disabled) { background: color-mix(in srgb, var(--amber) 12%, transparent); }
+
+/* The one prominent control: a filled macOS default button. */
+.wheel {
+  appearance: none;
+  font-family: inherit; font-size: 12px; font-weight: 590;
+  color: #fff;
+  background: linear-gradient(var(--blue), var(--blue-deep));
+  border: none; border-radius: var(--radius);
+  padding: 6px 13px;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0,0,0,.18);
+}
+.wheel:hover { filter: brightness(1.06); }
+.wheel:active { filter: brightness(.94); }
+.wheel.on { background: linear-gradient(var(--green), color-mix(in srgb, var(--green) 80%, #000)); }
 
 /* ─── ledger ────────────────────────────────────────────────────────────── */
+/* A grouped list: rounded container, hairline separators, no outer chrome. */
 
-.ledger { flex: 1; overflow-y: auto; padding: 6px 0; min-height: 140px; }
+.ledger {
+  margin: 2px 12px 6px;
+  background: var(--raised);
+  border: 1px solid var(--hair);
+  border-radius: var(--radius-lg);
+  overflow: hidden auto;
+  max-height: 210px;
+  min-height: 88px;
+}
 .entry {
   display: grid;
-  grid-template-columns: 44px 62px 1fr;
-  gap: 8px; align-items: baseline;
-  padding: 3px 14px;
-  border-left: 2px solid transparent;
+  grid-template-columns: 46px 62px 1fr;
+  gap: 9px; align-items: baseline;
+  padding: 6px 11px;
+  border-bottom: 1px solid var(--hair-soft);
+  font-size: 11.5px;
 }
-.entry .v { color: var(--dim); font-size: 9px; text-transform: uppercase; }
-.entry .a { color: var(--dim); }
-.entry .t { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.entry.ok { border-left-color: var(--ok); }
-.entry.ok .v { color: var(--ok); }
-/* Denials are the point of the whole panel. They get to shout. */
-.entry.no { border-left-color: var(--no); background: rgba(248,113,113,.06); }
-.entry.no .v, .entry.no .t { color: var(--no); }
+.entry:last-child { border-bottom: none; }
+.entry .v {
+  font-size: 9.5px; font-weight: 640; letter-spacing: .03em;
+  text-transform: uppercase; color: var(--label-4);
+}
+.entry .a { color: var(--label-3); font-family: var(--mono); font-size: 10.5px; }
+.entry .t {
+  color: var(--label); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.entry.ok .v { color: var(--green); }
+/* Refusals are the point of the ledger, so they get the one tint in the list. */
+.entry.no { background: color-mix(in srgb, var(--red) 7%, transparent); }
+.entry.no .v, .entry.no .t { color: var(--red); }
 
-/* ─── log ───────────────────────────────────────────────────────────────── */
+/* ─── ask ───────────────────────────────────────────────────────────────── */
 
-.log { height: 160px; overflow-y: auto; padding: 8px 14px; border-top: 1px solid var(--line); }
-.logLine { color: var(--dim); font-size: 10px; padding: 1px 0; }
-.logLine.ok { color: var(--ok); }
-.logLine.no { color: var(--no); }
+.askRow { display: flex; gap: 6px; padding: 2px 15px 6px; }
+.askRow input {
+  flex: 1; min-width: 0;
+  font-family: inherit; font-size: 12.5px;
+  color: var(--label);
+  background: var(--raised);
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+}
+.askRow input::placeholder { color: var(--label-4); }
+.askRow input:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 25%, transparent);
+}
 
-::-webkit-scrollbar { width: 8px; }
-::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+.answer {
+  margin: 0 15px 8px;
+  padding: 10px 12px;
+  background: var(--raised);
+  border: 1px solid var(--hair);
+  border-radius: var(--radius-lg);
+  font-size: 12.5px; line-height: 1.5;
+  color: var(--label-2);
+  max-height: 210px; overflow-y: auto;
+  white-space: pre-wrap;
+}
+.answer.waiting { color: var(--amber); }
 
 /* ─── drop zone ─────────────────────────────────────────────────────────── */
 
-.muted { color: var(--dim); font-size: 9px; letter-spacing: .1em; }
+.muted { font-size: 11px; font-weight: 400; color: var(--label-4); }
 
 .drop {
-  margin: 12px 14px;
+  margin: 2px 15px 8px;
   padding: 18px 12px;
-  border: 1px dashed var(--line);
-  border-radius: 4px;
+  border: 1.5px dashed var(--hair);
+  border-radius: var(--radius-lg);
   text-align: center;
+  color: var(--label-3);
   cursor: pointer;
-  color: var(--dim);
+  transition: border-color .12s ease, background .12s ease;
 }
-.drop span { display: block; font-size: 11px; letter-spacing: .1em; }
-.drop em { display: block; font-style: normal; font-size: 9px; margin-top: 4px; opacity: .7; }
-.drop:hover { border-color: var(--accent); color: var(--ink); }
-/* The whole panel is a drop target, so the cue has to be unmissable —
-   otherwise a file dropped an inch off target looks like a broken feature. */
+.drop span { display: block; font-size: 12.5px; font-weight: 500; color: var(--label-2); }
+.drop em { display: block; font-style: normal; font-size: 11px; margin-top: 3px; color: var(--label-4); }
+.drop:hover { background: var(--fill); }
+/* The whole window accepts a drop, so the cue must be unmissable — a file
+   landing an inch off target should never look like a broken feature. */
 .drop.over {
-  border-color: var(--accent);
-  border-style: solid;
-  background: rgba(56,189,248,.09);
-  color: var(--accent);
+  border-color: var(--blue); border-style: solid;
+  background: color-mix(in srgb, var(--blue) 10%, transparent);
 }
-.drop.busy { border-color: var(--warn); color: var(--warn); }
+.drop.busy { border-color: var(--amber); color: var(--amber); }
 
-/* ─── control state ─────────────────────────────────────────────────────── */
-/* Deliberately loud. Losing input is the single most confusing state this
-   panel can be in — everything simply stops responding with no explanation —
-   so which state you are in has to be readable without looking for it. */
+/* ─── log ───────────────────────────────────────────────────────────────── */
 
-.wheel {
-  padding: 6px 14px;
-  border-radius: 3px;
-  font: inherit;
-  font-size: 10px;
-  letter-spacing: .1em;
-  cursor: pointer;
-  border: 1px solid transparent;
+.log {
+  margin: 2px 12px 16px;
+  padding: 8px 11px;
+  background: var(--raised);
+  border: 1px solid var(--hair);
+  border-radius: var(--radius-lg);
+  max-height: 150px; overflow-y: auto;
 }
-.wheel.on {
-  background: var(--ok);
-  border-color: var(--ok);
-  color: #04220f;
-  font-weight: 700;
+.logLine {
+  font-size: 11px; color: var(--label-3);
+  padding: 1.5px 0;
+  font-variant-numeric: tabular-nums;
 }
-.wheel.off {
-  background: transparent;
-  border-color: var(--warn);
-  color: var(--warn);
-}
-.wheel.off:hover { background: rgba(251,191,36,.14); }
+.logLine.ok { color: var(--green); }
+.logLine.no { color: var(--red); }
 
-/* The button you press when the sandbox stops responding. Amber rather than
-   red: it fixes something, it does not destroy anything. */
-.tool.warnish { border-color: #5a4415; color: var(--warn); }
-.tool.warnish:hover:not(:disabled) { border-color: var(--warn); color: #fff; }
+/* ─── scrollbars ────────────────────────────────────────────────────────── */
+/* macOS overlay scrollbars: invisible until wanted. */
 
-/* ─── ask from out here ─────────────────────────────────────────────────── */
-/* Typing into the sandbox needs the display input path, which has failed
-   repeatedly. This reaches the app directly, so it keeps working. */
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(120,120,128,.32);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(120,120,128,.5); background-clip: content-box; }
 
-.askRow { display: flex; gap: 6px; padding: 10px 14px 6px; }
-.askRow input {
-  flex: 1; min-width: 0;
-  background: #0d1218; color: var(--ink);
-  border: 1px solid var(--line); border-radius: 3px;
-  padding: 7px 10px; font: inherit; font-size: 11px;
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
 }
-.askRow input:focus { outline: none; border-color: var(--accent); }
-.answer {
-  margin: 0 14px 8px; padding: 9px 11px;
-  background: #0d1218; border: 1px solid var(--line); border-radius: 3px;
-  color: var(--ink); font-size: 11px; line-height: 1.5;
-  max-height: 190px; overflow-y: auto; white-space: pre-wrap;
+
+@media (max-width: 900px) {
+  #stage { flex-direction: column; }
+  .pane.col { width: auto; border-left: none; border-top: 1px solid var(--hair); }
 }
-.answer.waiting { color: var(--warn); }

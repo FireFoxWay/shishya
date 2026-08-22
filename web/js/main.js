@@ -29,7 +29,7 @@ function log(msg, kind = "") {
 async function guard(btn, label, fn) {
   const was = btn.textContent;
   btn.disabled = true;
-  btn.textContent = "WORKING…";
+  btn.textContent = "Working…";
   try {
     const out = await fn();
     log(`${label} ✓`, "ok");
@@ -73,23 +73,23 @@ function paintStatus(s) {
   browsing = b.browsing;
   const bp = $("browseState");
   if (bp) {
-    bp.textContent = b.browsing === true ? "ALLOWED" : b.browsing === false ? "BLOCKED" : "—";
+    bp.textContent = b.browsing === true ? "Allowed" : b.browsing === false ? "Blocked" : "—";
     bp.className = b.browsing === true ? "open" : "locked";
     bp.title = b.detail ?? "";
   }
-  $("btnBrowse").textContent = b.browsing === true ? "STOP BROWSING" : "ALLOW BROWSING";
+  $("btnBrowse").textContent = b.browsing === true ? "Stop browsing" : "Allow browsing";
 
   const e = s.egress ?? {};
   netLocked = e.locked;
   const pill = $("netState");
-  pill.textContent = e.locked === true ? "LOCKED"
-                   : e.locked === false ? "OPEN" : "UNKNOWN";
+  pill.textContent = e.locked === true ? "Locked"
+                   : e.locked === false ? "Open" : "Unknown";
   pill.className = e.locked === true ? "locked" : e.locked === false ? "open" : "no";
   pill.title = e.detail ?? "";
-  $("btnNet").textContent = e.locked === true ? "UNLOCK NET" : "LOCK NET";
+  $("btnNet").textContent = e.locked === true ? "Unlock network" : "Lock network";
 
   const state = s.vm?.state ?? "unknown";
-  $("vmState").textContent = state.toUpperCase();
+  $("vmState").textContent = state.charAt(0).toUpperCase() + state.slice(1);
   $("vmState").className = state === "running" ? "ok" : "no";
   $("denyCount").textContent = s.ledger?.denied ?? 0;
   $("denyCount").className = (s.ledger?.denied ?? 0) > 0 ? "no" : "";
@@ -101,11 +101,11 @@ function paintStatus(s) {
   // Three states, not two: unknown is its own answer when the sandbox is down.
   const eg = s.egress ?? {};
   netLocked = eg.locked;
-  const label = netLocked === true ? "LOCKED" : netLocked === false ? "OPEN" : "UNKNOWN";
+  const label = netLocked === true ? "Locked" : netLocked === false ? "Open" : "Unknown";
   $("netState").textContent = label;
   $("netState").className = netLocked === true ? "locked" : netLocked === false ? "open" : "";
   $("netState").title = eg.detail ?? "";
-  $("btnNet").textContent = netLocked === true ? "UNLOCK NET" : "LOCK NET";
+  $("btnNet").textContent = netLocked === true ? "Unlock network" : "Lock network";
 }
 
 async function refresh() {
@@ -126,7 +126,7 @@ async function refresh() {
    dropping view_only — the clone keeps its session either way. */
 
 /* The button used to be labelled with the action rather than the state:
-   while you were in control it read "HAND IT BACK", which reads as an
+   while you were in control it read "Hand it back", which reads as an
    instruction to press it. Pressing it then switched your input off, and the
    sandbox appeared frozen. It now states what is true right now, and says
    underneath what pressing it would do. */
@@ -140,7 +140,7 @@ function setWheel(on) {
   const b = $("btnWheel");
   b.classList.toggle("on", on);
   b.classList.toggle("off", !on);
-  b.textContent = on ? "● YOU HAVE CONTROL" : "○ WATCHING ONLY — CLICK TO CONTROL";
+  b.textContent = on ? "You have control" : "○ WATCHING ONLY — CLICK TO CONTROL";
   b.title = on ? "Click to stop sending your clicks to the sandbox"
                : "Click to send your clicks and typing to the sandbox";
   log(on ? "you have control of the sandbox" : "your input is no longer being sent");

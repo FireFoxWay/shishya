@@ -11,14 +11,14 @@
 <header id="topbar">
   <div class="brand">
     <span class="mark"></span>
-    <span class="bName">SHISHYA</span>
-    <span class="bTag">शिष्य // LOCAL APPRENTICE</span>
+    <span class="bName">Shishya</span>
+    <span class="bTag">शिष्य · local apprentice</span>
   </div>
   <div class="topRight">
-    <div class="kv"><span>SANDBOX</span><b id="vmState">…</b></div>
-    <div class="kv"><span>EGRESS</span><b id="netState" class="locked">LOCKED</b></div>
-    <div class="kv"><span>WEB</span><b id="browseState" class="locked">BLOCKED</b></div>
-    <div class="kv"><span>DENIED</span><b id="denyCount">0</b></div>
+    <div class="kv"><span>Sandbox</span><b id="vmState">…</b></div>
+    <div class="kv"><span>Egress</span><b id="netState" class="locked">Locked</b></div>
+    <div class="kv"><span>Web</span><b id="browseState" class="locked">BLocked</b></div>
+    <div class="kv"><span>Denied</span><b id="denyCount">0</b></div>
   </div>
 </header>
 
@@ -27,10 +27,10 @@
   <!-- ─── the clone's screen ─────────────────────────────────────────── -->
   <section class="pane grow">
     <div class="paneHead">
-      <span>THE CLONE</span>
+      <span>The clone</span>
       <div class="tools">
-        <button id="btnWheel" class="wheel on">● YOU HAVE CONTROL</button>
-        <button id="btnReload" class="tool ghost">RECONNECT</button>
+        <button id="btnWheel" class="wheel on">You have control</button>
+        <button id="btnReload" class="tool ghost">Reconnect</button>
       </div>
     </div>
     <!-- noVNC is served from inside the VM itself (port 6080, forwarded).
@@ -47,33 +47,33 @@
 
   <!-- ─── ledger ─────────────────────────────────────────────────────── -->
   <aside class="pane col">
-    <div class="paneHead"><span>PERMISSION LEDGER</span></div>
+    <div class="paneHead"><span>Permission ledger</span></div>
     <div id="ledger" class="ledger"></div>
 
-    <div class="paneHead"><span>OPEN ON THE CLONE'S DESKTOP</span></div>
+    <div class="paneHead"><span>Open on the clone’s desktop</span></div>
     <div id="apps" class="controls">
-      <button class="tool" data-app="chat_app.py">TALK TO IT</button>
-      <button class="tool" data-app="training_app.py">TRAINING DATA</button>
-      <button class="tool" data-app="make_app.py">MAKE A DOCUMENT</button>
-      <button class="tool" data-app="code_app.py">CODE</button>
-      <button class="tool" data-app="files_app.py">FILES</button>
-      <button class="tool" data-app="models_app.py">MODELS</button>
-      <button class="tool" data-app="browser_app.py">BROWSER</button>
-      <button class="tool" data-app="system_app.py">SYSTEM</button>
-      <button class="tool" data-app="activity_app.py">ACTIVITY</button>
-      <button class="tool" data-app="inbox_app.py">INBOX</button>
-      <button id="btnCloseAll" class="tool ghost">CLOSE ALL</button>
+      <button class="tool" data-app="chat_app.py">Talk to it</button>
+      <button class="tool" data-app="training_app.py">Training data</button>
+      <button class="tool" data-app="make_app.py">Make a document</button>
+      <button class="tool" data-app="code_app.py">Code</button>
+      <button class="tool" data-app="files_app.py">Files</button>
+      <button class="tool" data-app="models_app.py">Models</button>
+      <button class="tool" data-app="browser_app.py">Browser</button>
+      <button class="tool" data-app="system_app.py">System</button>
+      <button class="tool" data-app="activity_app.py">Activity</button>
+      <button class="tool" data-app="inbox_app.py">Inbox</button>
+      <button id="btnCloseAll" class="tool ghost">Close all</button>
     </div>
 
-    <div class="paneHead"><span>ASK THE CLONE</span></div>
+    <div class="paneHead"><span>Ask the clone</span></div>
     <div class="askRow">
       <input id="askBox" type="text" placeholder="Type a question, press Enter" />
-      <button id="btnAsk" class="tool">ASK</button>
+      <button id="btnAsk" class="tool">Ask</button>
     </div>
     <div id="answer" class="answer">Open Training Data first, then ask here.</div>
 
     <div class="paneHead">
-      <span>SEND TO THE CLONE</span>
+      <span>Send to the clone</span>
       <span id="inboxCount" class="muted">empty</span>
     </div>
     <div id="drop" class="drop">
@@ -82,19 +82,19 @@
       <input type="file" id="picker" multiple hidden />
     </div>
     <div class="controls" style="padding-top:0">
-      <button id="btnSources" class="tool">USE AS SOURCES</button>
+      <button id="btnSources" class="tool">Use as sources</button>
     </div>
 
-    <div class="paneHead"><span>SANDBOX</span></div>
+    <div class="paneHead"><span>Sandbox</span></div>
     <div class="controls">
-      <button id="btnCreate" class="tool">FIRST BOOT</button>
-      <button id="btnStart"  class="tool">START</button>
-      <button id="btnStop"   class="tool ghost">STOP</button>
-      <button id="btnSnap"   class="tool">MARK CLEAN</button>
-      <button id="btnRoll"   class="tool danger">ROLL BACK</button>
-      <button id="btnNet"    class="tool">UNLOCK NET</button>
-      <button id="btnBrowse" class="tool warnish">ALLOW BROWSING</button>
-      <button id="btnFix"    class="tool warnish">FIX INPUT</button>
+      <button id="btnCreate" class="tool">First boot</button>
+      <button id="btnStart"  class="tool">Start</button>
+      <button id="btnStop"   class="tool ghost">Stop</button>
+      <button id="btnSnap"   class="tool">Mark clean</button>
+      <button id="btnRoll"   class="tool danger">Roll back</button>
+      <button id="btnNet"    class="tool">Unlock network</button>
+      <button id="btnBrowse" class="tool warnish">Allow browsing</button>
+      <button id="btnFix"    class="tool warnish">Fix input</button>
     </div>
     <div id="log" class="log"></div>
   </aside>
