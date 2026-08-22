@@ -13,6 +13,15 @@
 set -euxo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
+
+# The sandbox must be able to resolve its own name without asking anyone.
+# sudo does a lookup on the hostname; with egress locked that query goes
+# nowhere and waits for the DNS timeout, so every single sudo took ten
+# seconds. The control panel polls status every three, so requests piled up
+# and the whole panel looked hung — the security feature strangling the
+# interface that reports on it.
+grep -q "127.0.1.1" /etc/hosts || echo "127.0.1.1 $(hostname)" >> /etc/hosts
+
 apt-get update
 
 # Virtual display + a window manager light enough to boot in a second.
