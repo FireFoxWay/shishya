@@ -284,12 +284,29 @@ Handler.extensions_map.update({".js": "text/javascript", ".mjs": "text/javascrip
 if __name__ == "__main__":
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8200
 
-    # Loopback only, never "". Bound to every interface, the control panel —
-    # which can start programs inside the sandbox and move files into it —
-    # was reachable by anyone on the same wifi. On a project whose whole claim
-    # is that nothing leaves the laptop, that is the wrong default.
-    #
-    # 127.0.0.1 rather than "localhost": the name can resolve to ::1 first,
-    # and a server bound only to IPv4 then refuses its own address.
-    print(f"Shishya → http://127.0.0.1:{port}   (Ctrl-C to stop)")
-    ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
+    # Listen on both loopback addresses, because "localhost" resolves to ::1
+    # first on macOS and a server bound only to 127.0.0.1 then refuses its own
+    # name. Binding "" would fix that too and would also expose a panel that
+    # can start programs inside the sandbox to everyone on the wifi, so it is
+    # two loopback sockets rather than one wildcard.
+    import socket
+    import threading
+
+    class V6(ThreadingHTTPServer):
+        address_family = socket.AF_INET6
+
+    servers = []
+    for family, host in ((ThreadingHTTPServer, "127.0.0.1"), (V6, "::1")):
+        try:
+            servers.append(family((host, port), Handler))
+        except OSError as e:
+            # A machine with IPv6 switched off should still get a panel.
+            print(f"  (not listening on {host}: {e})")
+
+    if not servers:
+        sys.exit(f"could not bind port {port} on either loopback address")
+
+    print(f"Shishya → http://localhost:{port}   (Ctrl-C to stop)")
+    for server in servers[1:]:
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+    servers[0].serve_forever()
