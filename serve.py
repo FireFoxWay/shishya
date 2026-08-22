@@ -40,6 +40,7 @@ MAX_UPLOAD = 64 * 1024 * 1024
 # program inside the sandbox; it takes a choice from a menu, never a path.
 LAUNCHABLE = {
     "chat_app.py": "Shishya",
+    "findings_app.py": "Findings",
     "training_app.py": "Training Data",
     "files_app.py": "Files",
     "activity_app.py": "Activity",

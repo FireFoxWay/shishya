@@ -148,6 +148,7 @@ MENU = [
     ("Files",             "system-file-manager",  lambda: app("files_app.py")),
     ("Inbox",             "mail-message-new",     lambda: app("inbox_app.py")),
     (None, None, None),
+    ("Findings",          "dialog-warning",       lambda: app("findings_app.py")),
     ("Training Data",     "emblem-documents",     lambda: app("training_app.py")),
     ("Shishya",           "system-run",           lambda: app("shishya_app.py")),
     (None, None, None),

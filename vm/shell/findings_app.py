@@ -45,52 +45,60 @@ PROTOCOL = (
     "\n\nFirst line of output must be exactly 'FINDINGS: n' where n is how "
     "many problems were found — 0 if none. Then the details, one per line, "
     "each readable by someone who has never seen the file: name the column "
-    "and the values in plain text, not as Python tuples or dict reprs."
+    "and the values in plain text, not as Python tuples or dict reprs.\n\n"
+    "Never print more than 10 detail lines. A finding is only useful if it is "
+    "short and someone can act on it — a check that reported 8,254 outliers "
+    "told the reader nothing at all. If more than 10 things qualify, report "
+    "the 10 that matter most and say how many there were in total."
 )
 
 CHECKS = [
-    ("Duplicate names wearing different capitals",
-     "For each text column with fewer than 2000 distinct values, find values "
-     "that are identical when lowercased and stripped but differ as written. "
-     "Print the column, the variants, and how many rows each variant has. "
-     "Only report columns that actually have such collisions. " + PROTOCOL,
-     "The same supplier, customer or product counted twice splits every total "
-     "that involves it."),
+    ("The same name written two ways",
+     "For each text column, group values by their lowercased, whitespace-"
+     "stripped form and report only groups where two or more different "
+     "spellings occur AND each spelling appears in at least 5 rows. Rank by "
+     "the total rows affected, largest first, and report at most 8. Print the "
+     "column, the spellings, and the row count of each. Ignore columns where "
+     "values are shorter than 4 characters — those are codes and sizes, not "
+     "names." + PROTOCOL,
+     "The same supplier or manufacturer counted twice splits every total that "
+     "involves it."),
 
-    ("Columns that are almost entirely empty",
-     "For every column, count how many rows are empty, None, zero, 'N/A' or "
-     "blank. Print any column where that is above 80% of rows, with the "
-     "percentage, sorted worst first. " + PROTOCOL,
-     "A column nobody fills is either a broken process or a field that should "
-     "be removed."),
+    ("Columns nobody fills in",
+     "For every column, count rows that are empty, None, zero, 'N/A' or blank. "
+     "Report columns above 80%, ranked worst first, at most 10, with the "
+     "percentage." + PROTOCOL,
+     "A column nobody fills is a broken process or a field that should go."),
 
-    ("Numbers far outside the normal range",
-     "For each numeric column with more than 20 non-zero values, compute the "
-     "median and the interquartile range, and report values more than 6 "
-     "interquartile ranges from the median. Print at most 3 examples per "
-     "column with an identifying label from the first text column. " + PROTOCOL,
-     "One misplaced decimal point in a price or a quantity distorts every "
-     "figure computed from it."),
+    ("Figures that look like typing mistakes",
+     "For each numeric column, take only the non-zero values. Skip the column "
+     "entirely if it has fewer than 30 non-zero values or if its "
+     "interquartile range is zero. Report values more than 20 times the "
+     "median, at most 3 per column and at most 10 overall, ranked by how far "
+     "out they are, each with a label from the first text column." + PROTOCOL,
+     "One misplaced decimal in a price distorts every figure computed from it."),
 
-    ("Rows that duplicate an identifier",
-     "Find columns whose name suggests an identifier (contains 'id', 'code', "
-     "'sku', 'no' or 'number') and report any value appearing in more than "
-     "one row, with the count. At most 10 examples. " + PROTOCOL,
-     "An identifier that repeats means two records that should be one, or a "
-     "merge that went wrong."),
+    ("Identifiers that are not unique",
+     "Consider only columns where more than 80 percent of values are distinct "
+     "— a genuine identifier, not a size or a category. In those, report "
+     "values appearing in more than one row, at most 10, ranked by count." + PROTOCOL,
+     "A repeated identifier means two records that should be one."),
 
-    ("Things that stopped moving",
-     "If the sheet has columns whose headers are dates, treat them as a time "
-     "series per row. Report rows that had activity in the earlier half of "
-     "the period and none at all in the most recent quarter. Print at most 10 "
-     "with a label from the first text column. " + PROTOCOL,
-     "Stock that sold and then stopped is money sitting on a shelf."),
+    ("Stock that sold and then stopped",
+     "If column headers include dates, treat them as a time series per row. "
+     "Find rows with total activity above 10 in the earlier half and exactly "
+     "zero in the most recent quarter. Rank by how much they used to sell, "
+     "largest first, and report at most 10 with a label and the earlier "
+     "total. If there are no date columns, say so." + PROTOCOL,
+     "Something that sold well and then stopped is either a supply problem or "
+     "money asleep on a shelf."),
 
-    ("Money tied up in things that never moved",
-     "If the sheet has a quantity-on-hand column and a price or cost column, "
-     "compute quantity times price for rows whose activity columns are all "
-     "zero, and print the total and the ten largest with a label. " + PROTOCOL,
-     "The single number that tells you how much working capital is asleep."),
+    ("Value sitting in things that never move",
+     "If there is a quantity-on-hand column and a price or cost column, "
+     "consider only rows whose dated activity columns are all zero. Print the "
+     "total quantity times price for those rows, then the ten largest "
+     "individually with a label. If the columns do not exist, say so." + PROTOCOL,
+     "The one number that says how much working capital is asleep."),
 ]
 
 
