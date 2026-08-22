@@ -54,7 +54,13 @@ PROTOCOL = (
 
 CHECKS = [
     ("The same name written two ways",
-     "For each text column, group values by their lowercased, whitespace-"
+     "IMPORTANT: where columns repeat as a family — names differing only by a "
+     "trailing number, such as 'Purchased From 1' through 'Purchased From 10' "
+     "— stack them into ONE series and treat it as a single column. The same "
+     "supplier is written one way in one column and another way in the next, "
+     "so grouping each column separately finds nothing. "
+     "Then, for each text column or stacked family, group values by their "
+     "lowercased, whitespace-"
      "stripped form and report only groups where two or more different "
      "spellings occur AND each spelling appears in at least 5 rows. Rank by "
      "the total rows affected, largest first, and report at most 8. Print the "
@@ -100,6 +106,87 @@ CHECKS = [
      "individually with a label. If the columns do not exist, say so." + PROTOCOL,
      "The one number that says how much working capital is asleep."),
 ]
+
+
+# ─── the checks that do not need a model ────────────────────────────────────
+# Where the algorithm is exact and known, writing it is better than asking for
+# it. The near-duplicate check is the one that found a supplier counted twice,
+# and the model failed it twice running with increasingly clever pandas. A
+# check that matters must not depend on the model having a good day.
+
+def check_duplicate_names():
+    """Values that are the same name written two ways.
+
+    Repeated column families are stacked before grouping. The same supplier
+    appears as "KK ENTERPRISES" in one column and "Kk Enterprises" in the
+    next, so grouping each column on its own finds nothing at all — which is
+    exactly what happened.
+    """
+    import re
+    from collections import Counter, defaultdict
+    from openpyxl import load_workbook
+
+    lines = []
+    total = 0
+    for path in sorted(common.TRAINING.iterdir()):
+        if path.suffix.lower() not in (".xlsx", ".xlsm"):
+            continue
+        try:
+            wb = load_workbook(path, read_only=True, data_only=True)
+        except Exception:
+            continue
+        for ws in wb.worksheets:
+            rows = ws.iter_rows(values_only=True)
+            try:
+                header = [str(c) if c is not None else "" for c in next(rows)]
+            except StopIteration:
+                continue
+
+            # Columns sharing a stem, minus a trailing number, are one series.
+            family = defaultdict(list)
+            for i, name in enumerate(header):
+                family[re.sub(r"\s*\d+$", "", name).strip() or f"col{i}"].append(i)
+
+            counts = defaultdict(Counter)
+            for row in rows:
+                for stem, idxs in family.items():
+                    for i in idxs:
+                        if i >= len(row):
+                            continue
+                        value = row[i]
+                        if not isinstance(value, str):
+                            continue
+                        value = value.strip()
+                        # Short values are sizes and codes, not names.
+                        if len(value) < 4 or value.upper() == "N/A":
+                            continue
+                        counts[stem][value] += 1
+            wb_name = path.name
+            for stem, tally in counts.items():
+                grouped = defaultdict(list)
+                for value, n in tally.items():
+                    grouped[value.lower()].append((value, n))
+                for variants in grouped.values():
+                    if len(variants) < 2:
+                        continue
+                    if not all(n >= 5 for _, n in variants):
+                        continue
+                    total += 1
+                    variants.sort(key=lambda v: -v[1])
+                    shown = "  vs  ".join(f"{v} ({n} rows)" for v, n in variants)
+                    lines.append((sum(n for _, n in variants),
+                                  f"{stem} — {shown}"))
+        wb.close()
+
+    lines.sort(reverse=True)
+    out = [f"FINDINGS: {total}"]
+    out += [text for _, text in lines[:10]]
+    if total > 10:
+        out.append(f"...and {total - 10} more")
+    return "\n".join(out)
+
+
+BUILTIN = {"The same name written two ways": check_duplicate_names}
 
 
 class FindingsApp(Gtk.Window):
@@ -159,11 +246,15 @@ class FindingsApp(Gtk.Window):
             GLib.idle_add(self.progress.set_text, f"{i} of {len(CHECKS)} — {title}")
             GLib.idle_add(self.status.set_text, f"Checking: {title.lower()}")
 
+            builtin = BUILTIN.get(title)
             try:
-                code = repair(common.ask(
-                    f"{listing}\n\nWrite a Python script that: {brief}",
-                    system=CODE_SYSTEM, budget=5120, job="code"))
-                out, err = ("", "no code") if not usable(code) else run(code)
+                if builtin:
+                    code, out, err = "(built in, not generated)", builtin(), ""
+                else:
+                    code = repair(common.ask(
+                        f"{listing}\n\nWrite a Python script that: {brief}",
+                        system=CODE_SYSTEM, budget=5120, job="code"))
+                    out, err = ("", "no code") if not usable(code) else run(code)
             except Exception as e:
                 code, out, err = "", "", f"{type(e).__name__}: {e}"
 

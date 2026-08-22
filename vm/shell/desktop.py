@@ -43,34 +43,48 @@ APPS = Path(__file__).resolve().parent
 # more thing competing with the app the clone is driving.
 
 CSS = b"""
-.wall-title     { color: #6f7d8c; font-size: 11px; letter-spacing: 2px; }
+/* Swiss-technical, matching the control panel. Two design languages sat side
+   by side on one screen while the panel was rebuilt and this was not, which
+   looked less like a choice than an oversight.
+
+   No colour, so emphasis is inversion -- the same rule as the panel. The one
+   place that hurts is the taskbar pill, which used green and amber to say
+   what the clone is doing; those become an inverted block and a dashed
+   outline, which carry the same three states without the palette. */
+
+.wall-title     { color: #7c828a; font-size: 9px; letter-spacing: 3px; }
 
 .icon-btn       { background: transparent; border: 1px solid transparent;
-                  border-radius: 4px; padding: 10px 6px; }
-.icon-btn:hover { background: rgba(255,255,255,.07);
-                  border-color: rgba(255,255,255,.14); }
-.icon-btn:focus { background: rgba(255,255,255,.18); }
-.icon-label     { color: #e6ebf1; font-size: 12px; }
+                  border-radius: 0; padding: 10px 6px; }
+.icon-btn:hover { background: #0b0c0e; }
+.icon-btn:focus { background: #0b0c0e; }
+.icon-label     { color: #e9ebee; font-size: 11px; letter-spacing: .4px; }
 
-.taskbar        { background-color: #0b0f14; border-top: 1px solid #1e2833; }
+.taskbar        { background-color: #0b0c0e; border-top: 1px solid #2a2e33; }
 
 .start          { background: transparent; border: none; border-radius: 0;
-                  padding: 0 18px; color: #e6ebf1; font-size: 12px; }
-.start:hover    { background: rgba(255,255,255,.10); }
+                  padding: 0 20px; color: #e9ebee;
+                  font-size: 10px; letter-spacing: 1.6px; }
+.start:hover    { background: #e9ebee; color: #0b0c0e; }
 
-.task           { background: rgba(255,255,255,.05); border: none;
-                  border-radius: 0;
-                  padding: 0 14px; color: #dbe3ea; font-size: 12px; }
-.task:hover     { background: rgba(255,255,255,.10); }
+.task           { background: transparent; border: none;
+                  border-bottom: 2px solid #e9ebee; border-radius: 0;
+                  padding: 0 14px; color: #c9ced4;
+                  font-size: 10px; letter-spacing: 1.2px; }
+.task:hover     { background: #e9ebee; color: #0b0c0e; }
 
-.clock          { color: #c3ccd6; font-size: 12px; padding: 0 16px; }
+.clock          { color: #9aa0a7; font-size: 10px; letter-spacing: 1.4px;
+                  padding: 0 18px; }
 
-.pill           { border-radius: 3px; padding: 3px 10px; font-size: 10px; }
-.pill-idle      { background: #1e2833; color: #8b98a5; }
-.pill-working   { color: #ffffff; }
-.pill-wheel     { background: #2f7a55; color: #ffffff; }
-/* Amber, not red: needing a person is normal, not a failure. */
-.pill-needs     { background: #b3720a; color: #ffffff; }
+/* Three states without colour: outline for idle, solid for working, dashed
+   for the two that need a person. */
+.pill           { border-radius: 0; padding: 3px 10px;
+                  font-size: 9px; letter-spacing: 1.6px;
+                  border: 1px solid #e9ebee; color: #e9ebee; }
+.pill-idle      { border-color: #4a4f55; color: #8b9199; }
+.pill-working   { background: #e9ebee; color: #0b0c0e; }
+.pill-wheel     { border-style: dashed; }
+.pill-needs     { border-style: dashed; border-width: 2px; }
 """
 
 
