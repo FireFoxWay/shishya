@@ -310,6 +310,82 @@ def egress_state():
     }
 
 
+def browsing(on: bool):
+    """Open the network for the web, and nothing else.
+
+    A browser needs DNS and 80/443. It does not need the sandbox to be able
+    to reach everything, which is what the plain unlock does. This is a third
+    state between locked and open: the clone can fetch a page and still
+    cannot be told to talk to an arbitrary host on an arbitrary port.
+
+    Deliberately a mode you switch on rather than a permanent exception. The
+    claim was never "this can never reach the internet" — it is "it cannot
+    unless you say so, and when you do it is in the log."
+    """
+    if on:
+        script = f"""
+          nft flush ruleset
+          nft add table inet shishya
+          nft add chain inet shishya out '{{ type filter hook output priority 0; policy drop; }}'
+          nft add rule inet shishya out ct state established,related accept
+          nft add rule inet shishya out oifname lo accept
+          nft add rule inet shishya out ip daddr {HOST_IP} tcp dport {OLLAMA_PORT} accept
+          nft add rule inet shishya out udp dport 53 accept
+          nft add rule inet shishya out tcp dport 53 accept
+          nft add rule inet shishya out tcp dport {{ 80, 443 }} accept
+        """
+    else:
+        return egress(True)
+    p = subprocess.run(
+        ["limactl", "shell", "--workdir", "/", NAME, "--", "sudo", "bash", "-lc", script],
+        capture_output=True, text=True, timeout=60,
+    )
+    if p.returncode != 0:
+        raise VMError(p.stderr.strip())
+    return browsing_state()
+
+
+def set_browsing(on: bool):
+    """Grant or revoke browsing, and tell the sandbox which it is.
+
+    Refuses when the Mac itself has no network: a browser that opens onto
+    connection errors looks broken, and the honest message is that there is
+    nothing to reach.
+    """
+    if on and not host_online():
+        return {"browsing": False,
+                "detail": "this Mac is not on a network — there is nothing to browse"}
+    result = browsing(on)
+    flag = SHARED / ".browsing"
+    try:
+        SHARED.mkdir(parents=True, exist_ok=True)
+        flag.write_text("on" if on and result.get("browsing") else "off")
+    except OSError:
+        pass
+    return result
+
+
+def browsing_state():
+    """Measured, like everything else about the lock."""
+    p = subprocess.run(
+        ["limactl", "shell", "--workdir", "/", NAME, "--",
+         "sudo", "nft", "list", "table", "inet", "shishya"],
+        capture_output=True, text=True, timeout=30)
+    if p.returncode != 0:
+        return {"browsing": False, "detail": "no rules loaded — the sandbox is wide open"}
+    web = "dport { 80, 443 }" in p.stdout or "dport 80" in p.stdout
+    return {"browsing": web,
+            "detail": "the web is reachable" if web else "the web is blocked"}
+
+
+def host_online():
+    """Is the Mac itself on a network? The browser is useless otherwise, and
+    saying so plainly beats a page of connection errors."""
+    p = subprocess.run(["route", "-n", "get", "default"],
+                       capture_output=True, text=True, timeout=10)
+    return "gateway:" in p.stdout
+
+
 def egress(locked: bool):
     if locked:
         script = f"""

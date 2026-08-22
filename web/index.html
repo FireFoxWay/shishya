@@ -17,6 +17,7 @@
   <div class="topRight">
     <div class="kv"><span>SANDBOX</span><b id="vmState">…</b></div>
     <div class="kv"><span>EGRESS</span><b id="netState" class="locked">LOCKED</b></div>
+    <div class="kv"><span>WEB</span><b id="browseState" class="locked">BLOCKED</b></div>
     <div class="kv"><span>DENIED</span><b id="denyCount">0</b></div>
   </div>
 </header>
@@ -57,6 +58,7 @@
       <button class="tool" data-app="code_app.py">CODE</button>
       <button class="tool" data-app="files_app.py">FILES</button>
       <button class="tool" data-app="models_app.py">MODELS</button>
+      <button class="tool" data-app="browser_app.py">BROWSER</button>
       <button class="tool" data-app="system_app.py">SYSTEM</button>
       <button class="tool" data-app="activity_app.py">ACTIVITY</button>
       <button class="tool" data-app="inbox_app.py">INBOX</button>
@@ -91,6 +93,7 @@
       <button id="btnSnap"   class="tool">MARK CLEAN</button>
       <button id="btnRoll"   class="tool danger">ROLL BACK</button>
       <button id="btnNet"    class="tool">UNLOCK NET</button>
+      <button id="btnBrowse" class="tool warnish">ALLOW BROWSING</button>
       <button id="btnFix"    class="tool warnish">FIX INPUT</button>
     </div>
     <div id="log" class="log"></div>

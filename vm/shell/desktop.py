@@ -160,6 +160,7 @@ MENU = [
     ("Work folder",       "folder-documents",     lambda: files(WORK)),
     ("Lessons",           "folder-templates",     lambda: files(LESSONS)),
     ("Activity",          "text-x-generic",       lambda: app("activity_app.py")),
+    ("Browser",           "web-browser",          lambda: app("browser_app.py")),
     ("System",            "utilities-system-monitor", lambda: app("system_app.py")),
     ("Models",            "applications-science", lambda: app("models_app.py")),
     ("Settings",          "preferences-system",   lambda: app("settings_app.py")),

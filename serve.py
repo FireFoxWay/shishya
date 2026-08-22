@@ -47,6 +47,7 @@ LAUNCHABLE = {
     "code_app.py": "Code",
     "models_app.py": "Models",
     "system_app.py": "System",
+    "browser_app.py": "Browser",
 }
 
 
@@ -145,6 +146,7 @@ class Handler(SimpleHTTPRequestHandler):
                 "snapshot_taken": vm._snapshot_age(),
                 # Measured, never assumed. Unknown when the VM is down, because
                 # "locked" would be a claim we cannot support.
+                "browsing": vm.browsing_state() if live else {"browsing": None},
                 "egress": vm.egress_state() if live else {"locked": None,
                                                           "detail": "sandbox is not running"},
             }
@@ -223,6 +225,14 @@ class Handler(SimpleHTTPRequestHandler):
         if route == "vm/fix-input":
             ledger.record(ledger.INFO, "display.reset", "vnc stack", actor="guru")
             return vm.reset_display()
+
+        if route == "vm/browsing":
+            on = bool(body.get("on"))
+            out = vm.set_browsing(on)
+            ledger.record(ledger.ALLOW if out.get("browsing") else ledger.DENY,
+                          "net.browse", "allowed" if out.get("browsing") else "blocked",
+                          actor="guru", detail=out.get("detail"))
+            return out
 
         if route == "vm/egress":
             locked = bool(body.get("locked", True))

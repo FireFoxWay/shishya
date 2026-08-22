@@ -69,6 +69,16 @@ function paintStatus(s) {
      when we last pressed the button. An indicator that reports a state it
      never checked is worse than no indicator on a panel whose whole promise
      is that you can verify what happened. */
+  const b = s.browsing ?? {};
+  browsing = b.browsing;
+  const bp = $("browseState");
+  if (bp) {
+    bp.textContent = b.browsing === true ? "ALLOWED" : b.browsing === false ? "BLOCKED" : "—";
+    bp.className = b.browsing === true ? "open" : "locked";
+    bp.title = b.detail ?? "";
+  }
+  $("btnBrowse").textContent = b.browsing === true ? "STOP BROWSING" : "ALLOW BROWSING";
+
   const e = s.egress ?? {};
   netLocked = e.locked;
   const pill = $("netState");
@@ -243,6 +253,16 @@ $("btnSources").onclick = e => guard(e.target, "use as sources", async () => {
 
 $("btnCloseAll").onclick = e =>
   guard(e.target, "close apps", () => api.close());
+
+/* Browsing is a mode, not a setting: it shows in the header beside EGRESS so
+   nobody can be unsure whether the sandbox can currently reach the web. */
+let browsing = null;
+
+$("btnBrowse").onclick = e => guard(e.target, "browsing", async () => {
+  const out = await api.browsing(browsing !== true);
+  if (!out.browsing && out.detail) log(out.detail, "no");
+  return out;
+});
 
 $("btnFix").onclick = e => guard(e.target, "rebuild display", async () => {
   const out = await api.fixInput();

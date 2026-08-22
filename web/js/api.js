@@ -34,6 +34,7 @@ export const api = {
   fixInput: ()      => call("vm/fix-input", {}),
   close:    (app)   => call("close", app ? { app } : {}),
   sources:  ()      => call("sources", {}),
+  browsing: (on)    => call("vm/browsing", { on }),
   ask:      (text)  => call("ask", { text }),
   answer:   ()      => call("answer", {}),
   status:   ()      => call("status"),
