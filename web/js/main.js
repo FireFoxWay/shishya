@@ -160,14 +160,24 @@ function paintStatus(s) {
   $("btnNet").textContent = e.locked === true ? "Unlock network" : "Lock network";
 
   const state = s.vm?.state ?? "unknown";
-  $("vmState").textContent = state.charAt(0).toUpperCase() + state.slice(1);
+  $("vmState").textContent =
+    state === "unknown" ? "Checking" : state.charAt(0).toUpperCase() + state.slice(1);
   $("vmState").className = state === "running" ? "ok" : "no";
   $("denyCount").textContent = s.ledger?.denied ?? 0;
   $("denyCount").className = (s.ledger?.denied ?? 0) > 0 ? "no" : "";
 
+  /* Say what is true, including "I do not know yet". The panel claimed the
+     sandbox was not running while it was running perfectly — the page had
+     simply loaded before the first poll returned. On a panel whose whole
+     purpose is to report honestly, a confident wrong answer is the worst
+     kind. */
   const live = state === "running";
   $("screenMsg").style.display = live ? "none" : "grid";
-  $("screenMsg").textContent = live ? "" : `sandbox ${state}`;
+  $("screenMsg").textContent =
+    live ? "" :
+    state === "unknown" ? "connecting to the sandbox" :
+    state === "no-lima" ? "lima is not installed" :
+    `sandbox ${state}`;
 
   // Three states, not two: unknown is its own answer when the sandbox is down.
   const eg = s.egress ?? {};

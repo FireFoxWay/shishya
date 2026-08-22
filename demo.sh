@@ -90,6 +90,7 @@ reset() {
 
   say "Restarting the control panel"
   pkill -f "serve.py $PANEL" 2>/dev/null
+  wait 2>/dev/null || true
   ( cd "$ROOT" && nohup python3 serve.py "$PANEL" >var/serve.log 2>&1 & )
   for _ in $(seq 1 25); do
     curl -s -o /dev/null "http://localhost:$PANEL/api/status" && break
@@ -117,7 +118,7 @@ reset() {
   check
   echo
   say "Panel: http://localhost:$PANEL"
-  say "Reload the page, then press TAKE THE WHEEL before clicking in the sandbox."
+  say "Reload the page. Drive from the panel; do not click inside the sandbox."
 }
 
 case "${1:-reset}" in

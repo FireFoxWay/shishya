@@ -16,7 +16,7 @@
   </div>
   <div class="topRight">
     <button id="btnTheme" class="themeSwap" title="Light, dark, or follow the system">Auto</button>
-    <div class="kv"><span>Sandbox</span><b id="vmState">…</b></div>
+    <div class="kv"><span>Sandbox</span><b id="vmState">Checking</b></div>
     <div class="kv"><span>Egress</span><b id="netState" class="locked">Locked</b></div>
     <div class="kv"><span>Web</span><b id="browseState" class="locked">BLocked</b></div>
     <div class="kv"><span>Denied</span><b id="denyCount">0</b></div>
@@ -42,7 +42,7 @@
            shows a red error card over the clone's screen. -->
       <iframe id="vnc" title="clone display" allow="fullscreen"
               src="http://localhost:6080/vnc.html?autoconnect=1&reconnect=1&reconnect_delay=1500&resize=scale&view_only=0"></iframe>
-      <div id="screenMsg" class="msg">sandbox not running</div>
+      <div id="screenMsg" class="msg">connecting to the sandbox</div>
     </div>
   </section>
 
