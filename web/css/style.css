@@ -2,91 +2,69 @@
    SHISHYA — control panel
    ============================================================================
 
-   Apple's design language, and on this machine that is nearly free: the
-   font stack below resolves to real SF Pro on macOS, so the type is the
-   system's own rather than an impression of it.
+   Swiss-technical, after the reference: a cool grey ground, pure black
+   hairlines, wireframe marks, and a great deal of air. No rounded corners
+   worth the name and no colour at all.
 
-   The shape is a macOS document window — content on the left, an inspector
-   sidebar on the right. Sections are grouped rows with hairline separators,
-   controls are small and quiet, and exactly one colour carries meaning at a
-   time. Depth comes from hairlines and a single soft shadow, never from
-   heavy borders.
+   Two decisions follow from "no colour", and both are load-bearing:
 
-   Every class name here already existed. This file changes how the panel
-   looks and nothing about how it works.
+   Emphasis is inversion. A selected control is a solid black block with white
+   type — the strongest signal available once the palette is gone, and it
+   reads harder than any accent would.
+
+   Refusals in the ledger are therefore black blocks rather than red rows. The
+   audit trail is the most important thing on this panel, so it gets the
+   strongest treatment the language allows.
+
+   Every class name here already existed. This changes how the panel looks and
+   nothing about how it works.
    ========================================================================== */
+
+@import url("https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap");
 
 :root {
   color-scheme: light;
 
-  /* macOS system greys */
-  --bg:        #ECECEE;      /* window background */
-  --content:   #FFFFFF;      /* the content area */
-  --sidebar:   #F5F5F7;      /* inspector, very slightly recessed */
-  --raised:    #FFFFFF;
-  --hair:      rgba(0,0,0,.10);
-  --hair-soft: rgba(0,0,0,.06);
+  /* The ground is a gradient, not a flat fill — it is what gives the
+     reference its depth without a single shadow. */
+  --sky-1:  #DCDEE1;
+  --sky-2:  #C6C9CE;
+  --paper:  #E8E9EB;
+  --card:   rgba(255,255,255,.42);
 
-  --label:     #1D1D1F;      /* primary label */
-  --label-2:   #3C3C43;      /* secondary */
-  --label-3:   rgba(60,60,67,.60);
-  --label-4:   rgba(60,60,67,.35);
+  --ink:    #0B0C0E;
+  --ink-2:  #3A3D42;
+  --ink-3:  #8A8F96;
+  --ink-4:  #A9AEB4;
 
-  /* system colours */
-  --blue:      #007AFF;
-  --blue-deep: #0062CC;
-  --green:     #248A3D;
-  --red:       #D70015;
-  --orange:    #C93400;
-  --amber:     #B25000;
+  --line:   rgba(11,12,14,.22);
+  --line-2: rgba(11,12,14,.10);
 
-  --fill:      rgba(120,120,128,.12);   /* control background */
-  --fill-hi:   rgba(120,120,128,.20);
-
-  --shadow:    0 1px 3px rgba(0,0,0,.08), 0 8px 24px -14px rgba(0,0,0,.22);
-  --radius:    7px;
-  --radius-lg: 11px;
-
-  /* -apple-system is SF Pro on a Mac. The rest are for anywhere else. */
-  --ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
-        system-ui, sans-serif;
-  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+  --ui:   "Archivo", -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --bg:        #1C1C1E;
-    --content:   #000000;
-    --sidebar:   #232326;
-    --raised:    #2C2C2E;
-    --hair:      rgba(255,255,255,.12);
-    --hair-soft: rgba(255,255,255,.07);
-    --label:     #F5F5F7;
-    --label-2:   #EBEBF5;
-    --label-3:   rgba(235,235,245,.60);
-    --label-4:   rgba(235,235,245,.32);
-    --blue:      #0A84FF;
-    --blue-deep: #409CFF;
-    --green:     #30D158;
-    --red:       #FF453A;
-    --orange:    #FF6961;
-    --amber:     #FF9F0A;
-    --fill:      rgba(120,120,128,.24);
-    --fill-hi:   rgba(120,120,128,.36);
-    --shadow:    0 1px 3px rgba(0,0,0,.5), 0 8px 24px -14px rgba(0,0,0,.8);
+    --sky-1:  #1A1C1F;
+    --sky-2:  #0C0D0F;
+    --paper:  #141618;
+    --card:   rgba(255,255,255,.05);
+    --ink:    #F2F3F5;
+    --ink-2:  #C6CAD0;
+    --ink-3:  #7F858C;
+    --ink-4:  #5D636A;
+    --line:   rgba(242,243,245,.24);
+    --line-2: rgba(242,243,245,.11);
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #1C1C1E; --content: #000000; --sidebar: #232326; --raised: #2C2C2E;
-  --hair: rgba(255,255,255,.12); --hair-soft: rgba(255,255,255,.07);
-  --label: #F5F5F7; --label-2: #EBEBF5;
-  --label-3: rgba(235,235,245,.60); --label-4: rgba(235,235,245,.32);
-  --blue: #0A84FF; --blue-deep: #409CFF; --green: #30D158;
-  --red: #FF453A; --orange: #FF6961; --amber: #FF9F0A;
-  --fill: rgba(120,120,128,.24); --fill-hi: rgba(120,120,128,.36);
-  --shadow: 0 1px 3px rgba(0,0,0,.5), 0 8px 24px -14px rgba(0,0,0,.8);
+  --sky-1: #1A1C1F; --sky-2: #0C0D0F; --paper: #141618;
+  --card: rgba(255,255,255,.05);
+  --ink: #F2F3F5; --ink-2: #C6CAD0; --ink-3: #7F858C; --ink-4: #5D636A;
+  --line: rgba(242,243,245,.24); --line-2: rgba(242,243,245,.11);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -95,108 +73,90 @@ body {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: var(--bg);
-  color: var(--label);
+  background: linear-gradient(170deg, var(--sky-1) 0%, var(--sky-2) 100%);
+  color: var(--ink);
   font-family: var(--ui);
-  font-size: 13px;              /* macOS body size */
-  line-height: 1.45;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: -.005em;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
 }
 
-/* ─── toolbar ───────────────────────────────────────────────────────────── */
-/* A macOS unified toolbar: title on the left, state on the right, one
-   hairline underneath. Translucency where the browser supports it. */
+/* ─── header ────────────────────────────────────────────────────────────── */
+/* Corner metadata, as in the reference: identity hard left, state hard
+   right, a rule beneath. Nothing floats in the middle. */
 
 #topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
-  padding: 0 16px;
-  height: 52px;
+  gap: 24px;
+  padding: 0 26px;
+  height: 58px;
   flex-shrink: 0;
-  background: color-mix(in srgb, var(--bg) 80%, transparent);
-  backdrop-filter: saturate(180%) blur(20px);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  border-bottom: 1px solid var(--hair);
+  border-bottom: 1px solid var(--line);
 }
 
-.brand { display: flex; align-items: center; gap: 9px; min-width: 0; }
-.mark {
-  width: 11px; height: 11px; border-radius: 50%;
-  background: var(--blue);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent);
-  flex-shrink: 0;
-}
+.brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+/* A filled square, not a dot. Circles are friendly; this is an instrument. */
+.mark { width: 9px; height: 9px; background: var(--ink); flex-shrink: 0; }
 .bName {
-  font-size: 14px; font-weight: 600; letter-spacing: -.01em;
+  font-size: 15px; font-weight: 700;
+  letter-spacing: .04em; text-transform: uppercase;
 }
 .bTag {
-  font-size: 11px; color: var(--label-3);
+  font-size: 10.5px; font-weight: 500; color: var(--ink-3);
+  letter-spacing: .06em; text-transform: uppercase;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
-.topRight { display: flex; align-items: center; gap: 6px; }
+.topRight { display: flex; align-items: flex-end; gap: 26px; }
 
-/* Status reads as a row of small capsules — the shape macOS uses when
-   several related states must be legible at a glance. */
-.kv {
-  display: flex; align-items: baseline; gap: 6px;
-  background: var(--fill);
-  border-radius: 6px;
-  padding: 4px 9px;
-}
+/* Label above, value below — a readout, not a badge. */
+.kv { display: flex; flex-direction: column; gap: 1px; align-items: flex-start; }
 .kv span {
-  font-size: 10px; font-weight: 590; letter-spacing: .04em;
-  text-transform: uppercase; color: var(--label-3);
+  font-size: 9px; font-weight: 500; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--ink-4);
 }
 .kv b {
-  font-size: 11px; font-weight: 600;
+  font-size: 12px; font-weight: 600; letter-spacing: .02em;
+  text-transform: uppercase;
   font-variant-numeric: tabular-nums;
+  color: var(--ink);
 }
-
-.ok, .locked { color: var(--green); }
-.no          { color: var(--red); }
-.open        { color: var(--amber); }
+/* State is carried by weight and a rule underneath, never by hue. */
+.ok, .locked { border-bottom: 2px solid var(--ink); }
+.no          { border-bottom: 2px solid var(--ink); opacity: .45; }
+.open        { border-bottom: 2px dashed var(--ink); }
 
 /* ─── layout ────────────────────────────────────────────────────────────── */
 
-#stage { flex: 1; display: flex; min-height: 0; gap: 0; }
-
+#stage { flex: 1; display: flex; min-height: 0; }
 .pane { display: flex; flex-direction: column; min-height: 0; }
-.pane.grow { flex: 1; padding: 12px; }
+.pane.grow { flex: 1; padding: 26px; }
 .pane.col {
-  width: 340px; flex-shrink: 0;
-  background: var(--sidebar);
-  border-left: 1px solid var(--hair);
+  width: 336px; flex-shrink: 0;
+  border-left: 1px solid var(--line);
   overflow-y: auto;
   overscroll-behavior: contain;
+  padding-bottom: 30px;
 }
 
-/* ─── section headers ───────────────────────────────────────────────────── */
-/* macOS sidebar headers: small, semibold, secondary colour, sentence case
-   rather than the shouty uppercase of a terminal. */
+/* ─── section labels ────────────────────────────────────────────────────── */
+/* Small, grey, letterspaced, and given room — "Forms", "Tools", "Lightning". */
 
 .paneHead {
   display: flex; align-items: baseline; justify-content: space-between;
   gap: 10px;
-  padding: 16px 15px 5px;
-  font-size: 11px; font-weight: 600;
-  letter-spacing: .02em;
-  color: var(--label-3);
-  text-transform: none;
+  padding: 26px 22px 10px;
+  font-size: 9.5px; font-weight: 500;
+  letter-spacing: .16em; text-transform: uppercase;
+  color: var(--ink-4);
 }
-/* Sentence case, not Title Case. The markup already carries the right
-   casing; capitalising here turned "Open on the clone's desktop" into
-   "Open On The Clone's Desktop", which is a Windows habit. */
-.paneHead span:first-child { text-transform: none; }
-
-/* The content pane's header is a toolbar strip, not a sidebar label. */
 .pane.grow .paneHead {
-  padding: 0 2px 10px;
-  font-size: 12px;
-  color: var(--label-2);
+  padding: 0 0 16px;
   align-items: center;
 }
 
@@ -205,205 +165,203 @@ body {
 .screen {
   position: relative; flex: 1;
   background: #000;
-  border-radius: var(--radius-lg);
+  border: 1px solid var(--ink);
   overflow: hidden;
-  box-shadow: var(--shadow);
-  border: 1px solid var(--hair);
 }
 .screen iframe { width: 100%; height: 100%; border: 0; display: block; }
 .msg {
   position: absolute; inset: 0;
   display: grid; place-items: center;
-  background: var(--raised); color: var(--label-3);
-  font-size: 13px;
+  background: var(--paper); color: var(--ink-3);
+  font-size: 10px; letter-spacing: .16em; text-transform: uppercase;
 }
 
 /* ─── controls ──────────────────────────────────────────────────────────── */
-/* macOS push buttons: small radius, quiet fill, one prominent style held in
-   reserve. Nothing here shouts unless it is destructive. */
+/* Hairline outline at rest; solid black on hover and when active. The whole
+   interaction model is one inversion. */
 
 .tools, .controls {
-  display: flex; flex-wrap: wrap; gap: 6px;
-  padding: 4px 15px 10px;
+  display: flex; flex-wrap: wrap; gap: 5px;
+  padding: 0 22px 14px;
 }
-.pane.grow .tools { padding: 0; }
+.pane.grow .tools { padding: 0; gap: 8px; }
 
 .tool {
   appearance: none;
   font-family: inherit;
-  font-size: 12px; font-weight: 500;
-  letter-spacing: 0;
-  color: var(--label);
-  background: var(--raised);
-  border: 1px solid var(--hair);
-  border-radius: var(--radius);
-  padding: 5px 11px;
+  font-size: 10px; font-weight: 500;
+  letter-spacing: .1em; text-transform: uppercase;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  padding: 7px 11px;
   cursor: pointer;
-  transition: background .12s ease, border-color .12s ease;
+  transition: background .1s linear, color .1s linear, border-color .1s linear;
   white-space: nowrap;
 }
-.tool:hover:not(:disabled) { background: var(--fill); }
-.tool:active:not(:disabled) { background: var(--fill-hi); }
-.tool:disabled { opacity: .4; cursor: default; }
-.tool:focus-visible {
-  outline: none;
-  border-color: var(--blue);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 28%, transparent);
+.tool:hover:not(:disabled) {
+  background: var(--ink); color: var(--paper); border-color: var(--ink);
 }
+.tool:active:not(:disabled) { opacity: .8; }
+.tool:disabled { opacity: .28; cursor: default; }
+.tool:focus-visible { outline: 1px solid var(--ink); outline-offset: 2px; }
 
-.tool.ghost { background: transparent; color: var(--label-3); }
-.tool.ghost:hover:not(:disabled) { background: var(--fill); color: var(--label); }
+.tool.ghost { color: var(--ink-3); border-color: var(--line-2); }
+.tool.ghost:hover:not(:disabled) { background: var(--ink); color: var(--paper); }
 
-/* Destructive and cautionary read by colour alone; the shape stays identical
-   so the row does not become a fairground. */
-.tool.danger  { color: var(--red); }
-.tool.danger:hover:not(:disabled)  { background: color-mix(in srgb, var(--red) 10%, transparent); }
-.tool.warnish { color: var(--amber); }
-.tool.warnish:hover:not(:disabled) { background: color-mix(in srgb, var(--amber) 12%, transparent); }
+/* Destructive and cautionary cannot be red here, so they are marked instead:
+   a heavier rule beneath, and a dashed one for the reversible pair. */
+.tool.danger  { border-bottom-width: 3px; border-bottom-color: var(--ink); }
+.tool.warnish { border-bottom-style: dashed; border-bottom-width: 2px; border-bottom-color: var(--ink); }
 
-/* The one prominent control: a filled macOS default button. */
+/* The one already-on control: inverted, as the reference marks its selection. */
 .wheel {
   appearance: none;
-  font-family: inherit; font-size: 12px; font-weight: 590;
-  color: #fff;
-  background: linear-gradient(var(--blue), var(--blue-deep));
-  border: none; border-radius: var(--radius);
-  padding: 6px 13px;
-  cursor: pointer;
-  box-shadow: 0 1px 2px rgba(0,0,0,.18);
+  font-family: inherit; font-size: 10px; font-weight: 600;
+  letter-spacing: .1em; text-transform: uppercase;
+  color: var(--paper); background: var(--ink);
+  border: 1px solid var(--ink); border-radius: 0;
+  padding: 8px 14px; cursor: pointer;
 }
-.wheel:hover { filter: brightness(1.06); }
-.wheel:active { filter: brightness(.94); }
-.wheel.on { background: linear-gradient(var(--green), color-mix(in srgb, var(--green) 80%, #000)); }
+.wheel:hover { opacity: .84; }
+.wheel.on { background: var(--ink); }
 
 /* ─── ledger ────────────────────────────────────────────────────────────── */
-/* A grouped list: rounded container, hairline separators, no outer chrome. */
 
 .ledger {
-  margin: 2px 12px 6px;
-  background: var(--raised);
-  border: 1px solid var(--hair);
-  border-radius: var(--radius-lg);
+  margin: 0 22px 6px;
+  border-top: 1px solid var(--line);
+  /* The sidebar is a flex column, so without these the ledger — which has
+     content but no intrinsic height its parent respects — collapses to zero
+     and shows ninety-four entries as blank space. It rendered correctly and
+     was simply invisible. */
+  flex: 0 0 auto;
+  min-height: 132px;
+  max-height: 208px;
   overflow: hidden auto;
-  max-height: 210px;
-  min-height: 88px;
 }
 .entry {
   display: grid;
-  grid-template-columns: 46px 62px 1fr;
-  gap: 9px; align-items: baseline;
-  padding: 6px 11px;
-  border-bottom: 1px solid var(--hair-soft);
-  font-size: 11.5px;
+  grid-template-columns: 44px 66px 1fr;
+  gap: 10px; align-items: baseline;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line-2);
+  font-size: 11px;
 }
-.entry:last-child { border-bottom: none; }
 .entry .v {
-  font-size: 9.5px; font-weight: 640; letter-spacing: .03em;
-  text-transform: uppercase; color: var(--label-4);
+  font-size: 8.5px; font-weight: 600; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--ink-4);
 }
-.entry .a { color: var(--label-3); font-family: var(--mono); font-size: 10.5px; }
-.entry .t {
-  color: var(--label); overflow: hidden;
-  text-overflow: ellipsis; white-space: nowrap;
+.entry .a { color: var(--ink-3); font-family: var(--mono); font-size: 10px; }
+.entry .t { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.entry.ok .v { color: var(--ink-2); }
+
+/* A refusal is the most important line this panel can show, and with the
+   palette gone the strongest thing available is to invert it. */
+.entry.no {
+  background: var(--ink);
+  padding-left: 8px; padding-right: 8px;
+  margin: 2px -8px;
 }
-.entry.ok .v { color: var(--green); }
-/* Refusals are the point of the ledger, so they get the one tint in the list. */
-.entry.no { background: color-mix(in srgb, var(--red) 7%, transparent); }
-.entry.no .v, .entry.no .t { color: var(--red); }
+.entry.no .v, .entry.no .a, .entry.no .t { color: var(--paper); }
 
 /* ─── ask ───────────────────────────────────────────────────────────────── */
+/* A rule you type on, in the reference's own manner. */
 
-.askRow { display: flex; gap: 6px; padding: 2px 15px 6px; }
+.askRow { display: flex; gap: 8px; padding: 0 22px 12px; align-items: flex-end; }
 .askRow input {
   flex: 1; min-width: 0;
-  font-family: inherit; font-size: 12.5px;
-  color: var(--label);
-  background: var(--raised);
-  border: 1px solid var(--hair);
-  border-radius: var(--radius);
-  padding: 6px 10px;
+  font-family: inherit; font-size: 12px; font-weight: 500;
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--ink);
+  border-radius: 0;
+  padding: 6px 2px;
 }
-.askRow input::placeholder { color: var(--label-4); }
-.askRow input:focus {
-  outline: none;
-  border-color: var(--blue);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 25%, transparent);
-}
+.askRow input::placeholder { color: var(--ink-4); }
+.askRow input:focus { outline: none; border-bottom-width: 2px; }
 
 .answer {
-  margin: 0 15px 8px;
-  padding: 10px 12px;
-  background: var(--raised);
-  border: 1px solid var(--hair);
-  border-radius: var(--radius-lg);
-  font-size: 12.5px; line-height: 1.5;
-  color: var(--label-2);
+  margin: 0 22px 14px;
+  padding: 12px 14px;
+  background: var(--card);
+  border: 1px solid var(--line-2);
+  font-size: 12px; line-height: 1.55;
+  color: var(--ink-2);
   max-height: 210px; overflow-y: auto;
   white-space: pre-wrap;
 }
-.answer.waiting { color: var(--amber); }
+.answer.waiting { color: var(--ink-3); font-style: italic; }
 
 /* ─── drop zone ─────────────────────────────────────────────────────────── */
 
-.muted { font-size: 11px; font-weight: 400; color: var(--label-4); }
+.muted { font-size: 9px; font-weight: 500; letter-spacing: .12em;
+         text-transform: uppercase; color: var(--ink-4); }
 
 .drop {
-  margin: 2px 15px 8px;
-  padding: 18px 12px;
-  border: 1.5px dashed var(--hair);
-  border-radius: var(--radius-lg);
+  margin: 0 22px 12px;
+  padding: 26px 12px;
+  border: 1px dashed var(--line);
   text-align: center;
-  color: var(--label-3);
+  color: var(--ink-3);
   cursor: pointer;
-  transition: border-color .12s ease, background .12s ease;
+  transition: background .1s linear, border-color .1s linear;
 }
-.drop span { display: block; font-size: 12.5px; font-weight: 500; color: var(--label-2); }
-.drop em { display: block; font-style: normal; font-size: 11px; margin-top: 3px; color: var(--label-4); }
-.drop:hover { background: var(--fill); }
-/* The whole window accepts a drop, so the cue must be unmissable — a file
-   landing an inch off target should never look like a broken feature. */
-.drop.over {
-  border-color: var(--blue); border-style: solid;
-  background: color-mix(in srgb, var(--blue) 10%, transparent);
+.drop span {
+  display: block; font-size: 10px; font-weight: 500;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--ink-2);
 }
-.drop.busy { border-color: var(--amber); color: var(--amber); }
+.drop em {
+  display: block; font-style: normal; font-size: 10px;
+  margin-top: 5px; color: var(--ink-4); letter-spacing: .02em; text-transform: none;
+}
+.drop:hover { border-color: var(--ink); }
+/* The whole window takes a drop, so the cue is a full inversion — a file
+   landing an inch wide should never look like a broken feature. */
+.drop.over { background: var(--ink); border-color: var(--ink); border-style: solid; }
+.drop.over span, .drop.over em { color: var(--paper); }
+.drop.busy { border-style: solid; border-color: var(--ink); }
 
 /* ─── log ───────────────────────────────────────────────────────────────── */
 
 .log {
-  margin: 2px 12px 16px;
-  padding: 8px 11px;
-  background: var(--raised);
-  border: 1px solid var(--hair);
-  border-radius: var(--radius-lg);
+  margin: 0 22px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-2);
   max-height: 150px; overflow-y: auto;
 }
 .logLine {
-  font-size: 11px; color: var(--label-3);
+  font-family: var(--mono);
+  font-size: 10px; color: var(--ink-3);
   padding: 1.5px 0;
   font-variant-numeric: tabular-nums;
 }
-.logLine.ok { color: var(--green); }
-.logLine.no { color: var(--red); }
+.logLine.ok { color: var(--ink); }
+.logLine.no { color: var(--ink); font-weight: 500; text-decoration: underline; }
 
-/* ─── scrollbars ────────────────────────────────────────────────────────── */
-/* macOS overlay scrollbars: invisible until wanted. */
+/* ─── corner marks ──────────────────────────────────────────────────────── */
+/* The date and the sequence number in the reference are what make it read as
+   an instrument rather than a page. Injected by CSS so the markup stays
+   about the machine, not the decoration. */
 
-::-webkit-scrollbar { width: 9px; height: 9px; }
+#stage::after {
+  content: "SHISHYA · LOCAL";
+  position: fixed; right: 352px; bottom: 14px;
+  font-size: 8.5px; letter-spacing: .2em; color: var(--ink-4);
+  pointer-events: none;
+}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb {
-  background: rgba(120,120,128,.32);
-  border-radius: 5px;
-  border: 2px solid transparent;
-  background-clip: content-box;
-}
-::-webkit-scrollbar-thumb:hover { background: rgba(120,120,128,.5); background-clip: content-box; }
+::-webkit-scrollbar-thumb { background: var(--line); }
+::-webkit-scrollbar-thumb:hover { background: var(--ink-3); }
 
-@media (prefers-reduced-motion: reduce) {
-  * { transition: none !important; }
-}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 
 @media (max-width: 900px) {
   #stage { flex-direction: column; }
-  .pane.col { width: auto; border-left: none; border-top: 1px solid var(--hair); }
+  .pane.col { width: auto; border-left: none; border-top: 1px solid var(--line); }
+  #stage::after { display: none; }
 }

@@ -96,6 +96,18 @@ reset() {
     sleep 1
   done
 
+  # Ollama is an app, and apps quit — it was down after a sleep and every
+  # single thing that needs the model failed with a connection refused. The
+  # check catches it; this starts it.
+  if ! curl -s -o /dev/null -m 3 http://localhost:11434/api/tags; then
+    say "Starting Ollama"
+    open -a Ollama 2>/dev/null
+    for _ in $(seq 1 30); do
+      curl -s -o /dev/null -m 2 http://localhost:11434/api/tags && break
+      sleep 2
+    done
+  fi
+
   say "Locking egress"
   curl -s -X POST -H 'Content-Type: application/json' -d '{"locked":true}' \
     "http://localhost:$PANEL/api/vm/egress" >/dev/null
