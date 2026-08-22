@@ -161,6 +161,29 @@ def drive(action, text=""):
     return {"result": (p.stdout or p.stderr).strip()}
 
 
+def run_command(command, timeout=45):
+    """Run a shell command inside the sandbox, as the clone.
+
+    The panel controls the OS; the OS controls what lives inside it. So this
+    reaches into the sandbox and nowhere else — never the Mac. It runs as
+    `clone`, which has no sudo, inside a VM whose network is off and whose
+    disk is one rollback from clean. A mistyped command here costs you the
+    sandbox at worst, and the sandbox is designed to be thrown away.
+
+    Not a real terminal: no pty, no persistent shell, so no interactive
+    programs and no cd that survives to the next command. It is for looking
+    at things, which is what it is actually wanted for.
+    """
+    p = subprocess.run(
+        ["limactl", "shell", "--workdir", "/", NAME, "--",
+         "sudo", "-u", "clone", "bash", "-lc",
+         f"cd /home/clone 2>/dev/null; {command}"],
+        capture_output=True, text=True, timeout=timeout)
+    out = (p.stdout or "").rstrip()
+    err = (p.stderr or "").rstrip()
+    return {"code": p.returncode, "out": out[-8000:], "err": err[-4000:]}
+
+
 def reset_display():
     """Rebuild the display stack without touching the VM or its apps.
 

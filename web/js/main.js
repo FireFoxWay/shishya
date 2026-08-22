@@ -39,7 +39,78 @@ async function guard(btn, label, fn) {
   } finally {
     btn.disabled = false;
     btn.textContent = was;
-    refresh();
+    /* ─── terminal ───────────────────────────────────────────────────────────── */
+/* Reaches into the sandbox and nowhere else. There is no pty behind it, so
+   each command is its own shell — no interactive programs, and cd does not
+   carry over. It is for looking at things. */
+
+const history = [];
+let histAt = 0;
+
+async function runCommand() {
+  const cmd = $("termIn").value.trim();
+  if (!cmd) return;
+  history.push(cmd);
+  histAt = history.length;
+  $("termIn").value = "";
+  echo(cmd, "cmd");
+  try {
+    const r = await api.shell(cmd);
+    if (r.out) echo(r.out);
+    if (r.err) echo(r.err, "bad");
+    if (!r.out && !r.err) echo(`(exit ${r.code})`, "cmd");
+  } catch (e) {
+    echo(e.message, "bad");
+  }
+}
+
+function echo(text, kind) {
+  const line = document.createElement("span");
+  if (kind) line.className = kind;
+  line.textContent = text + "\n";
+  const out = $("termOut");
+  out.append(line);
+  out.scrollTop = out.scrollHeight;
+}
+
+$("btnRun").onclick = runCommand;
+$("termIn").addEventListener("keydown", e => {
+  if (e.key === "Enter") return runCommand();
+  // Up and down walk what you already typed, as any shell does.
+  if (e.key === "ArrowUp" && histAt > 0) {
+    histAt--; $("termIn").value = history[histAt] ?? ""; e.preventDefault();
+  }
+  if (e.key === "ArrowDown") {
+    histAt = Math.min(histAt + 1, history.length);
+    $("termIn").value = history[histAt] ?? ""; e.preventDefault();
+  }
+});
+
+/* ─── appearance ─────────────────────────────────────────────────────────── */
+/* Three states. Auto is the absence of the attribute, which is exactly what
+   the stylesheet already keys on — the media query only applies when nothing
+   has been stamped on the root. */
+
+const THEMES = ["auto", "light", "dark"];
+
+function applyTheme(name) {
+  if (name === "auto") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.setAttribute("data-theme", name);
+  $("btnTheme").textContent = name;
+  try { localStorage.setItem("shishya.theme", name); } catch { /* private mode */ }
+}
+
+applyTheme((() => {
+  try { return THEMES.includes(localStorage.getItem("shishya.theme"))
+    ? localStorage.getItem("shishya.theme") : "auto"; } catch { return "auto"; }
+})());
+
+$("btnTheme").onclick = () => {
+  const now = $("btnTheme").textContent.trim().toLowerCase();
+  applyTheme(THEMES[(THEMES.indexOf(now) + 1) % THEMES.length]);
+};
+
+refresh();
   }
 }
 
@@ -202,7 +273,78 @@ async function send(files) {
     }
   }
   drop.classList.remove("busy");
-  if (done) refresh();
+  if (done) /* ─── terminal ───────────────────────────────────────────────────────────── */
+/* Reaches into the sandbox and nowhere else. There is no pty behind it, so
+   each command is its own shell — no interactive programs, and cd does not
+   carry over. It is for looking at things. */
+
+const history = [];
+let histAt = 0;
+
+async function runCommand() {
+  const cmd = $("termIn").value.trim();
+  if (!cmd) return;
+  history.push(cmd);
+  histAt = history.length;
+  $("termIn").value = "";
+  echo(cmd, "cmd");
+  try {
+    const r = await api.shell(cmd);
+    if (r.out) echo(r.out);
+    if (r.err) echo(r.err, "bad");
+    if (!r.out && !r.err) echo(`(exit ${r.code})`, "cmd");
+  } catch (e) {
+    echo(e.message, "bad");
+  }
+}
+
+function echo(text, kind) {
+  const line = document.createElement("span");
+  if (kind) line.className = kind;
+  line.textContent = text + "\n";
+  const out = $("termOut");
+  out.append(line);
+  out.scrollTop = out.scrollHeight;
+}
+
+$("btnRun").onclick = runCommand;
+$("termIn").addEventListener("keydown", e => {
+  if (e.key === "Enter") return runCommand();
+  // Up and down walk what you already typed, as any shell does.
+  if (e.key === "ArrowUp" && histAt > 0) {
+    histAt--; $("termIn").value = history[histAt] ?? ""; e.preventDefault();
+  }
+  if (e.key === "ArrowDown") {
+    histAt = Math.min(histAt + 1, history.length);
+    $("termIn").value = history[histAt] ?? ""; e.preventDefault();
+  }
+});
+
+/* ─── appearance ─────────────────────────────────────────────────────────── */
+/* Three states. Auto is the absence of the attribute, which is exactly what
+   the stylesheet already keys on — the media query only applies when nothing
+   has been stamped on the root. */
+
+const THEMES = ["auto", "light", "dark"];
+
+function applyTheme(name) {
+  if (name === "auto") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.setAttribute("data-theme", name);
+  $("btnTheme").textContent = name;
+  try { localStorage.setItem("shishya.theme", name); } catch { /* private mode */ }
+}
+
+applyTheme((() => {
+  try { return THEMES.includes(localStorage.getItem("shishya.theme"))
+    ? localStorage.getItem("shishya.theme") : "auto"; } catch { return "auto"; }
+})());
+
+$("btnTheme").onclick = () => {
+  const now = $("btnTheme").textContent.trim().toLowerCase();
+  applyTheme(THEMES[(THEMES.indexOf(now) + 1) % THEMES.length]);
+};
+
+refresh();
 }
 
 /* Launching from out here never touches the display, so it still works on
@@ -274,6 +416,77 @@ $("btnFix").onclick = e => guard(e.target, "rebuild display", async () => {
 
 $("btnWheel").onclick = () => setWheel(!wheel);
 $("btnReload").onclick = () => { $("vnc").src = $("vnc").src; log("reconnecting to clone display"); };
+
+/* ─── terminal ───────────────────────────────────────────────────────────── */
+/* Reaches into the sandbox and nowhere else. There is no pty behind it, so
+   each command is its own shell — no interactive programs, and cd does not
+   carry over. It is for looking at things. */
+
+const history = [];
+let histAt = 0;
+
+async function runCommand() {
+  const cmd = $("termIn").value.trim();
+  if (!cmd) return;
+  history.push(cmd);
+  histAt = history.length;
+  $("termIn").value = "";
+  echo(cmd, "cmd");
+  try {
+    const r = await api.shell(cmd);
+    if (r.out) echo(r.out);
+    if (r.err) echo(r.err, "bad");
+    if (!r.out && !r.err) echo(`(exit ${r.code})`, "cmd");
+  } catch (e) {
+    echo(e.message, "bad");
+  }
+}
+
+function echo(text, kind) {
+  const line = document.createElement("span");
+  if (kind) line.className = kind;
+  line.textContent = text + "\n";
+  const out = $("termOut");
+  out.append(line);
+  out.scrollTop = out.scrollHeight;
+}
+
+$("btnRun").onclick = runCommand;
+$("termIn").addEventListener("keydown", e => {
+  if (e.key === "Enter") return runCommand();
+  // Up and down walk what you already typed, as any shell does.
+  if (e.key === "ArrowUp" && histAt > 0) {
+    histAt--; $("termIn").value = history[histAt] ?? ""; e.preventDefault();
+  }
+  if (e.key === "ArrowDown") {
+    histAt = Math.min(histAt + 1, history.length);
+    $("termIn").value = history[histAt] ?? ""; e.preventDefault();
+  }
+});
+
+/* ─── appearance ─────────────────────────────────────────────────────────── */
+/* Three states. Auto is the absence of the attribute, which is exactly what
+   the stylesheet already keys on — the media query only applies when nothing
+   has been stamped on the root. */
+
+const THEMES = ["auto", "light", "dark"];
+
+function applyTheme(name) {
+  if (name === "auto") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.setAttribute("data-theme", name);
+  $("btnTheme").textContent = name;
+  try { localStorage.setItem("shishya.theme", name); } catch { /* private mode */ }
+}
+
+applyTheme((() => {
+  try { return THEMES.includes(localStorage.getItem("shishya.theme"))
+    ? localStorage.getItem("shishya.theme") : "auto"; } catch { return "auto"; }
+})());
+
+$("btnTheme").onclick = () => {
+  const now = $("btnTheme").textContent.trim().toLowerCase();
+  applyTheme(THEMES[(THEMES.indexOf(now) + 1) % THEMES.length]);
+};
 
 refresh();
 setInterval(refresh, 3000);

@@ -161,6 +161,7 @@ MENU = [
     ("Lessons",           "folder-templates",     lambda: files(LESSONS)),
     ("Activity",          "text-x-generic",       lambda: app("activity_app.py")),
     ("Browser",           "web-browser",          lambda: app("browser_app.py")),
+    ("Terminal",          "utilities-terminal",   lambda: terminal()),
     ("System",            "utilities-system-monitor", lambda: app("system_app.py")),
     ("Models",            "applications-science", lambda: app("models_app.py")),
     ("Settings",          "preferences-system",   lambda: app("settings_app.py")),
@@ -197,6 +198,23 @@ def app(name, *args):
     # should leave a trace somewhere, not just fail to appear.
     log = open(f"/tmp/{name}.log", "a")
     subprocess.Popen([sys.executable, str(target), *args], stdout=log, stderr=log)
+
+
+def terminal():
+    """A shell on the clone's own desktop.
+
+    xterm rather than a written terminal app: it is already installed, it is
+    a real pty so interactive programs work, and there is nothing to be
+    gained from reimplementing it. Sized and coloured to sit with the rest
+    rather than arriving as a white box from 1994.
+    """
+    log = open("/tmp/terminal.log", "a")
+    subprocess.Popen(
+        ["xterm", "-fa", "Monospace", "-fs", "11",
+         "-bg", "#101318", "-fg", "#dfe4ea", "-cr", "#dfe4ea",
+         "-geometry", "96x28", "-title", "Terminal",
+         "-sb", "-rightbar"],
+        stdout=log, stderr=log)
 
 
 def notice(message):

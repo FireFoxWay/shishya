@@ -540,9 +540,30 @@ def describe_material():
             + "\n".join(lines)) if lines else "There are no files yet."
 
 
+def repair_regex(code):
+    r"""Make string literals containing regex escapes raw.
+
+    Asked which supplier gives the best average price, it reached for
+    pd.wide_to_long with suffix='\d+' — no r prefix — which Python reads as
+    an invalid escape and pandas then fails on. The intent is unambiguous
+    every time: a backslash followed by a regex class letter inside a short
+    literal is a pattern, not text.
+    """
+    import re
+
+    def raw(m):
+        quote, body = m.group(1), m.group(2)
+        return f"r{quote}{body}{quote}"
+
+    # Short literals only, and only those carrying a regex escape. A long
+    # string with a stray backslash is more likely to be prose.
+    return re.sub(r"(?<![rbRB])(['\"])((?:[^'\"\\]|\\.){0,40}?\\[dDwWsSbBAZ][^'\"]{0,20}?)\1",
+                  raw, code)
+
+
 def repair(raw):
     """Everything we fix about generated code, in one place."""
-    return repair_calls(repair_paths(strip_fences(raw)))
+    return repair_regex(repair_calls(repair_paths(strip_fences(raw))))
 
 
 def usable(code):

@@ -131,6 +131,26 @@ body {
 .no          { border-bottom: 2px solid var(--ink); opacity: .45; }
 .open        { border-bottom: 2px dashed var(--ink); }
 
+/* ─── theme switch ──────────────────────────────────────────────────────── */
+/* Three states, not two. "Auto" follows the machine, which is what most
+   people want and what the stylesheet already did before there was a button. */
+
+.themeSwap {
+  appearance: none;
+  font-family: inherit;
+  font-size: 9px; font-weight: 500;
+  letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink-3);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  padding: 5px 9px;
+  cursor: pointer;
+  align-self: center;
+}
+.themeSwap:hover { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.themeSwap:focus-visible { outline: 1px solid var(--ink); outline-offset: 2px; }
+
 /* ─── layout ────────────────────────────────────────────────────────────── */
 
 #stage { flex: 1; display: flex; min-height: 0; }
@@ -294,6 +314,27 @@ body {
   white-space: pre-wrap;
 }
 .answer.waiting { color: var(--ink-3); font-style: italic; }
+
+/* ─── terminal ──────────────────────────────────────────────────────────── */
+
+.term {
+  margin: 0 22px 8px;
+  padding: 10px 12px;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--mono);
+  font-size: 10.5px; line-height: 1.5;
+  height: 150px; overflow-y: auto;
+  white-space: pre-wrap; word-break: break-word;
+}
+.term:empty::before {
+  content: "ls  ·  df -h  ·  ps aux  ·  cat /etc/hosts";
+  opacity: .35;
+}
+.term .cmd { opacity: .55; }
+.term .cmd::before { content: "$ "; }
+/* Failure is marked by a rule rather than a colour, like everything else. */
+.term .bad { border-left: 2px solid var(--paper); padding-left: 7px; display: block; }
 
 /* ─── drop zone ─────────────────────────────────────────────────────────── */
 

@@ -15,6 +15,7 @@ dependency that can end the demo.
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 import traceback
@@ -204,6 +205,19 @@ class Handler(SimpleHTTPRequestHandler):
                 ledger.record(ledger.ALLOW, "source.add", name, actor="guru",
                               detail="moved from inbox into the clone's material")
             return out
+
+        if route == "shell":
+            command = str(body.get("cmd", "")).strip()
+            if not command:
+                return {"error": "nothing to run"}
+            # Logged before it runs, so a command that hangs or breaks
+            # something still leaves a record of what was asked for.
+            ledger.record(ledger.INFO, "shell", command[:120], actor="guru",
+                          detail="run in the sandbox as clone")
+            try:
+                return vm.run_command(command)
+            except subprocess.TimeoutExpired:
+                return {"code": -1, "out": "", "err": "timed out"}
 
         if route == "close":
             name = body.get("app")

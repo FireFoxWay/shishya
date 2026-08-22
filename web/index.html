@@ -15,6 +15,7 @@
     <span class="bTag">शिष्य · local apprentice</span>
   </div>
   <div class="topRight">
+    <button id="btnTheme" class="themeSwap" title="Light, dark, or follow the system">Auto</button>
     <div class="kv"><span>Sandbox</span><b id="vmState">…</b></div>
     <div class="kv"><span>Egress</span><b id="netState" class="locked">Locked</b></div>
     <div class="kv"><span>Web</span><b id="browseState" class="locked">BLocked</b></div>
@@ -83,6 +84,16 @@
     </div>
     <div class="controls" style="padding-top:0">
       <button id="btnSources" class="tool">Use as sources</button>
+    </div>
+
+    <div class="paneHead">
+      <span>Terminal</span>
+      <span class="muted">in the sandbox, as clone</span>
+    </div>
+    <div id="termOut" class="term"></div>
+    <div class="askRow">
+      <input id="termIn" type="text" placeholder="A command, then Enter" spellcheck="false" />
+      <button id="btnRun" class="tool">Run</button>
     </div>
 
     <div class="paneHead"><span>Sandbox</span></div>
