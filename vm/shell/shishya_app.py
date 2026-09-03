@@ -167,7 +167,12 @@ class ShishyaApp(Gtk.Window):
         self.status.set_text("Saved. That is what I will do.")
 
     def on_run(self, _b):
-        self.status.set_text("The executor is week 4 — not built yet.")
+        # The executor exists and is driven from the control panel, not from
+        # in here: running it needs this display, and clicking inside the
+        # sandbox is the one path that keeps failing. Saying where the button
+        # is beats a message claiming a thing that now exists does not.
+        self.status.set_text("Run it from the control panel — Lessons, "
+                             "Plan, then Run it.")
 
 
 def render(proc):

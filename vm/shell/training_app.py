@@ -56,6 +56,46 @@ def terms(text):
     return out
 
 
+LATIN = re.compile(r"[A-Za-z]")
+
+
+def for_retrieval(question):
+    """The question in English when it was not asked in English.
+
+    The index is terms, weighted by rarity. A Telugu question shares no
+    tokens at all with an English attendance policy, so it does not merely
+    fail to find it — it finds whatever else happens to contain the one
+    thing both scripts agree on. Asked in Telugu whether a student with 68%
+    attendance may sit the exam, retrieval returned four passages of a
+    pharmacy inventory, because "68" appears in it. That is the §08 failure
+    again, and answering confidently from the wrong document is worse than
+    finding nothing.
+
+    So the question is translated for the search only. The reply is still
+    written from the original, in the language it was asked in — the
+    translation never reaches the person and is never shown as their words.
+    """
+    letters = len(LATIN.findall(question))
+    body = len(question.replace(" ", ""))
+    if body == 0 or letters >= max(3, body * 0.4):
+        return question, None          # already English enough to search with
+    try:
+        english = common.ask_job(
+            "answers",
+            "Translate this question into English. Reply with the translation "
+            f"and nothing else.\n\n{question}",
+            budget=600, timeout=180).strip()
+    except Exception:
+        return question, None          # a failed translation must not lose the question
+    # The longest line, not the first: the reply is sometimes preceded by a
+    # short preamble, and taking line one turned a Telugu question into
+    # "A student has" — which still found the right policy, by luck, on the
+    # strength of one word. Luck is not a retrieval strategy.
+    lines = [l.strip(' "\'') for l in english.splitlines() if l.strip()]
+    english = max(lines, key=len) if lines else ""
+    return (english or question), (english or None)
+
+
 class Library:
     """Chunks plus an inverted index, and — for spreadsheets — a row index.
 
@@ -254,7 +294,18 @@ SYSTEM = (
     "say what each is better at.\n"
     "Only say you cannot find it in the documents when they genuinely do not "
     "cover the subject at all.\n"
-    "Answer in a few sentences, in plain language."
+    "Answer in a few sentences, in plain language.\n"
+    # A clerk in a Hyderabad school writes the question in the language she
+    # thinks in; the policy she is asking about is in English. Answering in
+    # English regardless makes her translate her own answer back, which is
+    # both a worse product and the sort of thing that quietly decides who
+    # uses software and who does not. The material stays whatever language it
+    # is in — only the reply follows the question.
+    "Reply in the language the question was asked in. If it was asked in "
+    "Telugu, answer in Telugu; in Hindi, answer in Hindi; in English, answer "
+    "in English. The documents may be in a different language from the "
+    "question — quote names, figures and dates from them exactly as written, "
+    "and translate only your own words around them."
 )
 
 

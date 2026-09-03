@@ -17,6 +17,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 import traceback
 import urllib.parse
@@ -25,7 +26,11 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(ROOT, "host"))
 
+import experiments       # noqa: E402
+import history           # noqa: E402
 import ledger            # noqa: E402
+import secrets as vault  # noqa: E402
+import tasks             # noqa: E402
 import vm                # noqa: E402
 
 WEB = os.path.join(ROOT, "web")
@@ -41,6 +46,8 @@ MAX_UPLOAD = 64 * 1024 * 1024
 LAUNCHABLE = {
     "chat_app.py": "Shishya",
     "findings_app.py": "Findings",
+    "reports_app.py": "Reports",
+    "billing_app.py": "Billing",
     "training_app.py": "Training Data",
     "files_app.py": "Files",
     "activity_app.py": "Activity",
@@ -71,6 +78,145 @@ def safe_filename(raw):
     return name[:120]
 
 
+# ─── running a learned lesson ───────────────────────────────────────────────
+# The panel starts a run and then polls it, the same shape as ask/answer: a
+# procedure takes minutes, and holding the request open for it would stall the
+# panel's own status polling behind it.
+#
+# One at a time, deliberately. Two procedures typing into the same spreadsheet
+# at once is not a thing anyone should have to debug.
+
+_lesson = {"state": "idle", "lesson": None, "title": "", "events": [], "started": None}
+_lesson_lock = threading.Lock()
+
+# Which jobs have had their finish written to the ledger. In memory: a panel
+# restart may re-record one finish, which is honest — better than a database
+# for what is only deduplication of a log line.
+_job_seen = {}
+_job_lock = threading.Lock()
+
+
+def record_step(event):
+    """Put every step into the ledger — and every refusal as a refusal.
+
+    Refusing to guess is the whole design of the executor, so it gets the
+    ledger's strongest treatment rather than a note attached to a run. A step
+    that was attempted and could not be confirmed is also a deny: on this
+    panel, "I could not verify that" must never look like "done".
+    """
+    kind = event.get("kind")
+    if kind == "start":
+        return None
+    if kind == "ask":
+        # A question in the audit trail, before anyone answers it. If the
+        # run times out and moves on, the ledger still shows it asked.
+        return ledger.record(ledger.INFO, "lesson.ask", f"step {event.get('n')}",
+                             detail=event.get("text"))
+    if kind == "taught":
+        return ledger.record(ledger.ALLOW, "lesson.taught", f"step {event.get('n')}",
+                             detail=event.get("text"))
+    if kind == "skipped":
+        # A skip is a refusal to guess, so it is a deny like any other. Kept
+        # under its own action name because "I did not attempt this" and "I
+        # stopped the work" are different events and the log has to say which.
+        return ledger.record(ledger.DENY, "lesson.skip", f"step {event.get('n')}",
+                             detail=event.get("text"))
+    if kind == "halted":
+        return ledger.record(ledger.DENY, "lesson.halt", f"step {event.get('n')}",
+                             detail=event.get("message"))
+    if kind == "error":
+        return ledger.record(ledger.DENY, "lesson.error",
+                             (event.get("message") or "")[:70])
+    if kind == "done":
+        return ledger.record(ledger.INFO, "lesson.done",
+                             f"{event.get('performed')} performed, "
+                             f"{event.get('skipped')} skipped")
+    return ledger.record(ledger.ALLOW if event.get("ok") else ledger.DENY,
+                         "lesson.step",
+                         f"step {event.get('n')}: {(event.get('message') or '')[:60]}",
+                         detail=event.get("text"))
+
+
+def start_lesson(lesson_id):
+    """Begin a run on a background thread and return at once."""
+    plan = vm.lesson_plan(lesson_id)      # raises unless this really is a lesson
+    if not plan.get("doable"):
+        # Nothing in it can be performed, so a run would only write a column
+        # of refusals into the ledger and call itself finished.
+        return {"error": f"there is nothing in {plan.get('title')!r} I can perform "
+                         f"— all {plan.get('total')} steps are ones I do not understand"}
+    with _lesson_lock:
+        if _lesson["state"] == "running":
+            return {"error": f"{_lesson['title']!r} is already running"}
+        _lesson.update(state="running", lesson=lesson_id,
+                       title=plan.get("title", lesson_id), events=[],
+                       started=time.time())
+
+    # Logged before it runs, so a run that hangs still leaves a record of what
+    # was asked for. Same rule as the terminal.
+    ledger.record(ledger.INFO, "lesson.run", plan.get("title", lesson_id), actor="guru",
+                  detail=f"{plan.get('doable')} of {plan.get('total')} steps performable")
+
+    def step(event):
+        with _lesson_lock:
+            _lesson["events"].append(event)
+        record_step(event)
+
+    def go():
+        try:
+            vm.lesson_run(lesson_id, step)
+        except Exception as e:
+            step({"kind": "error", "ok": False, "message": f"{type(e).__name__}: {e}"})
+        finally:
+            with _lesson_lock:
+                _lesson["state"] = "done"
+
+    threading.Thread(target=go, daemon=True).start()
+    return {"started": lesson_id, "plan": plan}
+
+
+# ─── runs that happen without anybody pressing anything ─────────────────────
+# One thread, one minute apart. Deliberately dumb: it re-reads the schedule
+# file every tick rather than holding it, so editing a schedule in the Reports
+# app takes effect within the minute and nothing has to be told to reload.
+#
+# This is what makes the difference between a tool somebody operates and a
+# colleague who did the work before anybody arrived.
+
+SCHEDULE_TICK = 45
+
+
+def scheduler():
+    while True:
+        time.sleep(SCHEDULE_TICK)
+        try:
+            if vm.status().get("state") != "running":
+                continue          # nothing to run it in; try again next tick
+            items = vm.read_schedules()
+            fired = False
+            for item in items:
+                if not vm.due(item):
+                    continue
+                runner = item.get("runner", "audit.py")
+                if runner not in ("audit.py", "reporter.py", "tally.py",
+                                  "backup.py", "alerts.py"):
+                    continue      # a schedule names a runner from a menu, never a path
+                label = item.get("label") or runner
+                ledger.record(ledger.INFO, "schedule.fire", label, actor="system",
+                              detail=f"due at {item.get('at')} — nobody pressed anything")
+                # take_inbox False: the shop's books are the input, and a
+                # scheduled run must not empty an inbox somebody is staging.
+                vm.start_job(label, runner=runner, take_inbox=False)
+                item["last"] = time.strftime("%Y-%m-%d")
+                fired = True
+            if fired:
+                vm.write_schedules(items)
+        except Exception as e:
+            # A scheduler that dies takes every future run with it, silently.
+            ledger.record(ledger.DENY, "schedule.error", type(e).__name__,
+                          actor="system", detail=str(e)[:200])
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=WEB, **kwargs)
@@ -78,9 +224,31 @@ class Handler(SimpleHTTPRequestHandler):
     # ─── API ────────────────────────────────────────────────────────────────
 
     def do_GET(self):
+        # Produced files ride a query string, which the JSON router strips.
+        if self.path.split("?")[0] == "/api/job/file":
+            return self.job_file()
+        if self.path.split("?")[0] == "/api/take":
+            return self.take()
         if self.path.startswith("/api/"):
             return self._api("GET")
         return super().do_GET()
+
+    def job_file(self):
+        """Hand one produced file to the browser. vm.job_file does the
+        arguing about paths; this only moves bytes."""
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        try:
+            path = vm.job_file((q.get("job") or [""])[0], (q.get("name") or [""])[0])
+        except vm.VMError as e:
+            return self._json({"error": str(e)}, 404)
+        data = path.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Disposition",
+                         f'attachment; filename="{path.name}"')
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
     def do_POST(self):
         # Uploads are raw bytes, not JSON, so they bypass the usual API path.
@@ -123,6 +291,31 @@ class Handler(SimpleHTTPRequestHandler):
         ledger.record(ledger.ALLOW, "file.in", name, actor="guru",
                       detail=f"{size} bytes dropped from the host")
         return self._json({"name": name, "bytes": size})
+
+    def take(self):
+        """Hand one of the clone's files back to the browser.
+
+        Logged as file.out, which is the counterpart to the file.in written
+        when something is dropped on the panel. Both directions across the
+        boundary belong in the ledger, and until now only one of them was.
+        """
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        where = (q.get("where") or ["work"])[0]
+        rel = (q.get("path") or [""])[0]
+        try:
+            path = vm.take_file(where, rel)
+        except vm.VMError as e:
+            return self._json({"error": str(e)}, 404)
+        data = path.read_bytes()
+        ledger.record(ledger.ALLOW, "file.out", path.name, actor="guru",
+                      detail=f"{len(data)} bytes taken from the clone's {where}")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Disposition",
+                         f'attachment; filename="{path.name}"')
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
     def _api(self, method):
         route = self.path.split("?")[0][len("/api/"):].strip("/")
@@ -174,6 +367,70 @@ class Handler(SimpleHTTPRequestHandler):
             except OSError:
                 waiting = []
             return {"waiting": waiting}
+        if route == "job/progress":
+            state = vm.job_state(body.get("job"))
+            # The worker cannot reach the host ledger, so the finish is
+            # recorded here, the first time it is observed — once, not per
+            # poll, and deny for a failure so it counts as one.
+            if state.get("state") == "done" and state.get("job") \
+                    and _job_seen.get(state.get("job")) != "done":
+                # A finished job usually wrote something. Recording a version
+                # here means the history follows the work rather than
+                # depending on anybody pressing Save.
+                try:
+                    history.save(f"after {state.get('brief') or 'a job'}",
+                                 by="system")
+                except Exception:
+                    pass
+            if state.get("state") in ("done", "failed"):
+                with _job_lock:
+                    if _job_seen.get(state.get("job")) != state["state"]:
+                        _job_seen[state.get("job")] = state["state"]
+                        if state["state"] == "done":
+                            ledger.record(ledger.ALLOW, "job.done",
+                                          f"{len(state.get('files') or [])} file(s)",
+                                          detail=state.get("step"))
+                        else:
+                            ledger.record(ledger.DENY, "job.fail",
+                                          (state.get("step") or "failed")[:70],
+                                          detail=state.get("error"))
+            return state
+
+        if route == "schedules":
+            return {"schedules": vm.read_schedules(), "role": vm.role()}
+        if route == "alerts":
+            return vm.alerts()
+        if route == "tasks":
+            return {"tasks": tasks.listing(), "counts": tasks.counts()}
+        if route == "experiments":
+            rows = experiments.runs(limit=20)
+            for r in rows:
+                r["stale"] = experiments.changed_since(r)
+            return {"runs": rows, "datasets": experiments.datasets()}
+
+        if route == "history":
+            return {"status": history.status(), "log": history.log(20)}
+
+        if route == "secrets":
+            # Names and lengths only. There is deliberately no route that
+            # returns a value: the panel is a web page on a machine somebody
+            # else might be looking at, and a secret you can read off a
+            # screen is not one.
+            ok, detail = vault.permissions_ok()
+            return {"secrets": vault.names(), "store": str(vault.STORE),
+                    "private": ok, "detail": detail,
+                    "leaked": vault.leaked_into(os.path.join(ROOT, "shared"))}
+
+        if route == "approvals":
+            return {"pending": vm.pending_approvals(), "role": vm.role()}
+        if route == "take/list":
+            return vm.take_list(str(body.get("where", "work")),
+                                str(body.get("at", "")))
+        if route == "lessons":
+            return {"lessons": vm.lessons()}
+        if route == "lesson/progress":
+            with _lesson_lock:
+                return dict(_lesson, events=list(_lesson["events"]))
         if route == "ledger":
             return {"entries": ledger.read(limit=int(body.get("limit", 300)))}
 
@@ -237,6 +494,189 @@ class Handler(SimpleHTTPRequestHandler):
         if route == "answer":
             return vm.drive("read")
 
+        if route == "job":
+            brief = str(body.get("brief", "")).strip()
+            if not brief:
+                return {"error": "say what should be done with the files"}
+            # Logged before it runs — same rule as the terminal and lessons:
+            # a job that hangs must still leave a record of what was asked.
+            out = vm.start_job(brief)
+            ledger.record(ledger.ALLOW, "job.start", brief[:70], actor="guru",
+                          detail=f"{len(out['files'])} file(s) handed over: "
+                                 f"{', '.join(out['files']) or 'none'}")
+            return out
+
+        if route == "report":
+            title = str(body.get("brief", "")).strip()
+            out = vm.start_job(title, runner="reporter.py")
+            ledger.record(ledger.ALLOW, "report.start", title[:70] or "report",
+                          actor="guru",
+                          detail=f"{len(out['files'])} file(s) handed over: "
+                                 f"{', '.join(out['files']) or 'none'}")
+            return out
+
+        if route == "schedule":
+            # Whole list, replaced. Four fields and one writer; merging
+            # would be more code than the thing it protects.
+            items = body.get("schedules")
+            if not isinstance(items, list):
+                return {"error": "schedules must be a list"}
+            vm.write_schedules(items)
+            ledger.record(ledger.ALLOW, "schedule.set",
+                          f"{sum(1 for i in items if i.get('enabled', True))} active",
+                          actor="guru",
+                          detail="; ".join(f"{i.get('label')} at {i.get('at')}"
+                                           for i in items)[:200])
+            return {"schedules": items}
+
+        if route == "backup":
+            out = vm.start_job("Books backup", runner="backup.py", take_inbox=False)
+            ledger.record(ledger.ALLOW, "backup.start", "shop books", actor="guru")
+            return out
+
+        if route == "alerts/check":
+            out = vm.start_job("Alert check", runner="alerts.py", take_inbox=False)
+            ledger.record(ledger.INFO, "alerts.check", "shop", actor="guru")
+            return out
+
+        if route == "task/add":
+            made = tasks.add(str(body.get("what", "")), str(body.get("why", "")))
+            if made:
+                ledger.record(ledger.INFO, "task.add", made["what"][:60],
+                              actor="guru")
+            return {"task": made}
+
+        if route == "task/state":
+            out = tasks.set_state(str(body.get("id", "")), str(body.get("state", "")))
+            if out:
+                ledger.record(ledger.INFO, f"task.{out['state']}",
+                              out["what"][:60], actor="guru")
+            return {"task": out}
+
+        if route == "tasks/from-alerts":
+            # The alert is the symptom; the task is the work. Raising the
+            # same alert every evening leaves one task, not seven.
+            made = tasks.from_alerts(vm.alerts().get("alerts", []))
+            return {"raised": len(made), "tasks": tasks.listing()}
+
+        if route == "history/save":
+            # Called after anything that changes the material, and safe when
+            # nothing did. A history that only records when somebody
+            # remembers to ask is not a history.
+            out = history.save(str(body.get("why", "")) or "saved from the panel",
+                               by="guru")
+            if out.get("changed"):
+                ledger.record(ledger.INFO, "history.save", out.get("at", "?"),
+                              actor="guru", detail=out.get("why"))
+            return out
+
+        if route == "history/review":
+            try:
+                return history.review(str(body.get("at", "")))
+            except history.HistoryError as e:
+                return {"error": str(e)}
+
+        if route == "secret/set":
+            if vm.role() != "head":
+                return {"error": "only the head sets a secret"}
+            try:
+                out = vault.put(str(body.get("name", "")), str(body.get("value", "")))
+            except vault.SecretError as e:
+                return {"error": str(e)}
+            # The NAME is logged and the value never is. An audit trail that
+            # records what a credential was set to is a place to steal it from.
+            ledger.record(ledger.ALLOW, "secret.set", out["name"], actor="guru",
+                          detail=f"{out['length']} characters, value not recorded")
+            return out
+
+        if route == "secret/forget":
+            if vm.role() != "head":
+                return {"error": "only the head forgets a secret"}
+            try:
+                out = vault.forget(str(body.get("name", "")))
+            except vault.SecretError as e:
+                return {"error": str(e)}
+            ledger.record(ledger.DENY, "secret.forget", out["forgotten"],
+                          actor="guru", detail="removed from the store")
+            return out
+
+        if route == "approve":
+            # Only the head decides. Checked here rather than only in the
+            # panel: the button being hidden is a courtesy, this is the rule.
+            if vm.role() != "head":
+                return {"error": "only the head can decide a request"}
+            request_id = str(body.get("id", ""))
+            yes = bool(body.get("approved"))
+            decided = vm.decide_approval(request_id, yes,
+                                         str(body.get("note", "")))
+            if decided is None:
+                return {"error": "that request is not open"}
+            ledger.record(ledger.ALLOW if yes else ledger.DENY,
+                          "approval." + ("granted" if yes else "refused"),
+                          f"{decided['what']} {decided.get('target', '')}".strip(),
+                          actor="guru", detail=decided.get("detail"))
+            # Approving is the decision, not the doing. What happens next is
+            # the app's business — it polls for the answer and acts on it,
+            # so a decision recorded here can never be a half-finished action.
+            return {"decided": decided}
+
+        if route == "role":
+            # Not a security boundary and never described as one — the
+            # sandbox is. This decides which controls are offered, so a slip
+            # at the till cannot void yesterday or roll the machine back.
+            out = vm.set_role(str(body.get("role", "")))
+            ledger.record(ledger.ALLOW, "role.set", out["role"], actor="guru")
+            return out
+
+        if route == "audit":
+            out = vm.start_job("Shop audit", runner="audit.py", take_inbox=False)
+            ledger.record(ledger.ALLOW, "audit.start", "shop audit", actor="guru")
+            return out
+
+        if route == "tally":
+            out = vm.start_job("Tally vouchers", runner="tally.py")
+            ledger.record(ledger.ALLOW, "tally.start", "purchase vouchers",
+                          actor="guru",
+                          detail=f"{len(out['files'])} file(s) handed over: "
+                                 f"{', '.join(out['files']) or 'none'}")
+            return out
+
+        if route == "lesson/plan":
+            out = vm.lesson_plan(str(body.get("lesson", "")))
+            ledger.record(ledger.INFO, "lesson.plan", out.get("title", "?"), actor="guru",
+                          detail=f"{out.get('doable')} of {out.get('total')} steps performable")
+            return out
+
+        if route == "lesson/run":
+            return start_lesson(str(body.get("lesson", "")))
+
+        if route == "lesson/answer":
+            # The person's reply to a mid-run question. Written into the
+            # lesson's own folder, where the executor is polling for it —
+            # the shared mount is the one channel that crosses the boundary.
+            with _lesson_lock:
+                running, lesson_id = _lesson["state"] == "running", _lesson["lesson"]
+            if not running:
+                return {"error": "nothing is running to answer"}
+            n = int(body.get("n", 0))
+            answer = ({"skip": True} if body.get("skip")
+                      else {"text": str(body.get("text", "")).strip()})
+            if not body.get("skip") and not answer["text"]:
+                return {"error": "say how, or skip"}
+            ledger.record(ledger.ALLOW, "lesson.answer", f"step {n}", actor="guru",
+                          detail="skip" if body.get("skip") else answer["text"][:100])
+            target = vm.TRACES / lesson_id / f"answer-{n}.json"
+            tmp = target.with_suffix(".tmp")
+            tmp.write_text(json.dumps(answer))
+            tmp.replace(target)
+            return {"answered": n}
+
+        if route == "lesson/stop":
+            out = vm.lesson_stop()
+            ledger.record(ledger.INFO, "lesson.stop", _lesson.get("title") or "—",
+                          actor="guru", detail=out.get("detail"))
+            return out
+
         if route == "vm/fix-input":
             ledger.record(ledger.INFO, "display.reset", "vnc stack", actor="guru")
             return vm.reset_display()
@@ -291,7 +731,6 @@ if __name__ == "__main__":
     # can start programs inside the sandbox to everyone on the wifi, so it is
     # two loopback sockets rather than one wildcard.
     import socket
-    import threading
 
     class V6(ThreadingHTTPServer):
         address_family = socket.AF_INET6
@@ -306,6 +745,8 @@ if __name__ == "__main__":
 
     if not servers:
         sys.exit(f"could not bind port {port} on either loopback address")
+
+    threading.Thread(target=scheduler, daemon=True).start()
 
     print(f"Shishya → http://localhost:{port}   (Ctrl-C to stop)")
     for server in servers[1:]:

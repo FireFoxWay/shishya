@@ -30,6 +30,21 @@ QUIET = [
     # opens a recovery dialog in front of whatever was meant to be on screen.
     ("org.openoffice.Office.Recovery/AutoSave", "Enabled", "false"),
     ("org.openoffice.Office.Recovery/RecoveryInfo", "Enabled", "false"),
+
+    # AutoCorrect, off. Typed "No - below 65%", the cell stored
+    # "No – below 65%": a spaced hyphen becomes an en dash, straight quotes
+    # become curly. The executor's verification folds those so a lesson still
+    # runs to the end, but folding is a workaround for storing something
+    # nobody typed. A clerk demonstrating a job types a hyphen and means a
+    # hyphen, and the cell should hold one.
+    # The property is ChangeDash, not ReplaceDashes. The first attempt guessed
+    # the name, LibreOffice validated the profile against its schema on exit
+    # and silently dropped the unknown items, and the cell went on storing an
+    # en dash for a typed hyphen with nothing anywhere reporting a problem.
+    # Found by grepping the schema itself in share/registry/main.xcd, which is
+    # where the answer was the whole time.
+    ("org.openoffice.Office.Common/AutoCorrect", "ChangeDash", "false"),
+    ("org.openoffice.Office.Common/AutoCorrect", "AutocloseDoubleQuotes", "false"),
 ]
 
 ITEM = ('<item oor:path="/{path}"><prop oor:name="{name}" oor:op="fuse">'

@@ -34,8 +34,13 @@
 
   --ink:    #0B0C0E;
   --ink-2:  #3A3D42;
-  --ink-3:  #8A8F96;
-  --ink-4:  #A9AEB4;
+  /* Measured against the darker end of the ground, not guessed. The old
+     values were 1.96:1 and 1.35:1 — every section label, the ledger's
+     captions and the corner marks were not subtle, they were unreadable.
+     Quiet is a contrast ratio you can defend; these clear 3:1 and 4.5:1
+     at the bottom of the gradient, where the panel is darkest. */
+  --ink-3:  #4E545C;
+  --ink-4:  #5F656D;
 
   --line:   rgba(11,12,14,.22);
   --line-2: rgba(11,12,14,.10);
@@ -53,8 +58,8 @@
     --card:   rgba(255,255,255,.05);
     --ink:    #F2F3F5;
     --ink-2:  #C6CAD0;
-    --ink-3:  #7F858C;
-    --ink-4:  #5D636A;
+    --ink-3:  #8B919A;
+    --ink-4:  #767C84;
     --line:   rgba(242,243,245,.24);
     --line-2: rgba(242,243,245,.11);
   }
@@ -63,11 +68,15 @@
   color-scheme: dark;
   --sky-1: #1A1C1F; --sky-2: #0C0D0F; --paper: #141618;
   --card: rgba(255,255,255,.05);
-  --ink: #F2F3F5; --ink-2: #C6CAD0; --ink-3: #7F858C; --ink-4: #5D636A;
+  --ink: #F2F3F5; --ink-2: #C6CAD0; --ink-3: #8B919A; --ink-4: #767C84;
   --line: rgba(242,243,245,.24); --line-2: rgba(242,243,245,.11);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* Selecting text inverts it — the same move as every hover on the panel. */
+::selection { background: var(--ink); color: var(--paper); }
+input, textarea { caret-color: var(--ink); }
 
 body {
   height: 100vh;
@@ -115,7 +124,8 @@ body {
 .topRight { display: flex; align-items: flex-end; gap: 26px; }
 
 /* Label above, value below — a readout, not a badge. */
-.kv { display: flex; flex-direction: column; gap: 1px; align-items: flex-start; }
+.kv { display: flex; flex-direction: column; gap: 1px; align-items: flex-start;
+      min-width: 62px; /* Running → Stopped must not shove the row about */ }
 .kv span {
   font-size: 9px; font-weight: 500; letter-spacing: .14em;
   text-transform: uppercase; color: var(--ink-4);
@@ -126,10 +136,22 @@ body {
   font-variant-numeric: tabular-nums;
   color: var(--ink);
 }
-/* State is carried by weight and a rule underneath, never by hue. */
+/* State is carried by weight, a rule underneath, and a square — filled when
+   the guard holds, hollow when it does not. Never by hue: a square survives
+   a bad projector, and reads at a glance from across a demo table. */
+.kv b::before {
+  content: ""; display: inline-block;
+  width: 7px; height: 7px; margin-right: 6px;
+  background: var(--ink);
+  vertical-align: 1px;
+}
 .ok, .locked { border-bottom: 2px solid var(--ink); }
 .no          { border-bottom: 2px solid var(--ink); opacity: .45; }
 .open        { border-bottom: 2px dashed var(--ink); }
+.kv b.open::before, .kv b.no::before {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
 
 /* ─── theme switch ──────────────────────────────────────────────────────── */
 /* Three states, not two. "Auto" follows the machine, which is what most
@@ -157,11 +179,14 @@ body {
 .pane { display: flex; flex-direction: column; min-height: 0; }
 .pane.grow { flex: 1; padding: 26px; }
 .pane.col {
-  width: 336px; flex-shrink: 0;
+  width: 396px; flex-shrink: 0;
   border-left: 1px solid var(--line);
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding-bottom: 30px;
+  padding-bottom: 44px;
+  counter-reset: section;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
 }
 
 /* ─── section labels ────────────────────────────────────────────────────── */
@@ -170,12 +195,28 @@ body {
 .paneHead {
   display: flex; align-items: baseline; justify-content: space-between;
   gap: 10px;
-  padding: 26px 22px 10px;
+  margin: 30px 22px 0;
+  padding: 14px 0 12px;
+  border-top: 1px solid var(--line-2);
   font-size: 9.5px; font-weight: 500;
   letter-spacing: .16em; text-transform: uppercase;
   color: var(--ink-4);
 }
-.pane.grow .paneHead {
+/* Numbered like the handbook's sections — the index is what makes nine
+   sections in one column navigable at a glance, and it costs no markup. */
+.pane.col .paneHead > span:first-child::before {
+  counter-increment: section;
+  content: "0" counter(section) "  ";
+  font-family: var(--mono);
+  font-size: 8.5px;
+  color: var(--ink-4);
+  letter-spacing: .08em;
+}
+/* The first section sits under the header's own rule; a second rule there
+   would read as a mistake. */
+.pane.col .paneHead:first-child { margin-top: 4px; border-top: none; }
+.pane.grow .paneHead { margin: 0; border-top: none; padding: 26px 22px 10px;
+
   padding: 0 0 16px;
   align-items: center;
 }
@@ -189,6 +230,23 @@ body {
   overflow: hidden;
 }
 .screen iframe { width: 100%; height: 100%; border: 0; display: block; }
+/* Corner ticks, as on a viewfinder. Drawn over the frame, never the page. */
+.screen::after {
+  content: ""; position: absolute; inset: 6px;
+  pointer-events: none;
+  --tick: var(--ink-3);
+  background:
+    linear-gradient(var(--tick), var(--tick)) 0 0     / 12px 1px,
+    linear-gradient(var(--tick), var(--tick)) 0 0     / 1px 12px,
+    linear-gradient(var(--tick), var(--tick)) 100% 0  / 12px 1px,
+    linear-gradient(var(--tick), var(--tick)) 100% 0  / 1px 12px,
+    linear-gradient(var(--tick), var(--tick)) 0 100%    / 12px 1px,
+    linear-gradient(var(--tick), var(--tick)) 0 100%    / 1px 12px,
+    linear-gradient(var(--tick), var(--tick)) 100% 100% / 12px 1px,
+    linear-gradient(var(--tick), var(--tick)) 100% 100% / 1px 12px;
+  background-repeat: no-repeat;
+  opacity: .8;
+}
 .msg {
   position: absolute; inset: 0;
   display: grid; place-items: center;
@@ -201,13 +259,15 @@ body {
    interaction model is one inversion. */
 
 .tools, .controls {
-  display: flex; flex-wrap: wrap; gap: 5px;
-  padding: 0 22px 14px;
+  display: flex; flex-wrap: wrap; gap: 7px;
+  padding: 0 22px 16px;
 }
 .pane.grow .tools { padding: 0; gap: 8px; }
 
 .tool {
   appearance: none;
+  display: inline-flex; align-items: center;
+  min-height: 30px;
   font-family: inherit;
   font-size: 10px; font-weight: 500;
   letter-spacing: .1em; text-transform: uppercase;
@@ -215,7 +275,7 @@ body {
   background: transparent;
   border: 1px solid var(--line);
   border-radius: 0;
-  padding: 7px 11px;
+  padding: 0 12px;
   cursor: pointer;
   transition: background .1s linear, color .1s linear, border-color .1s linear;
   white-space: nowrap;
@@ -223,7 +283,9 @@ body {
 .tool:hover:not(:disabled) {
   background: var(--ink); color: var(--paper); border-color: var(--ink);
 }
-.tool:active:not(:disabled) { opacity: .8; }
+/* A press moves — one pixel, the way a real key does. Opacity reads as a
+   rendering glitch; displacement reads as a mechanism. */
+.tool:active:not(:disabled) { transform: translateY(1px); }
 .tool:disabled { opacity: .28; cursor: default; }
 .tool:focus-visible { outline: 1px solid var(--ink); outline-offset: 2px; }
 
@@ -249,6 +311,12 @@ body {
 
 /* ─── ledger ────────────────────────────────────────────────────────────── */
 
+.ledger:empty::before {
+  content: "every action, and every refusal, lands here";
+  display: block; padding: 18px 0;
+  font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--ink-4);
+}
 .ledger {
   margin: 0 22px 6px;
   border-top: 1px solid var(--line);
@@ -263,12 +331,28 @@ body {
 }
 .entry {
   display: grid;
-  grid-template-columns: 44px 66px 1fr;
-  gap: 10px; align-items: baseline;
+  grid-template-columns: 46px 40px 64px 1fr;
+  gap: 9px; align-items: baseline;
   padding: 7px 0;
   border-bottom: 1px solid var(--line-2);
   font-size: 11px;
 }
+/* The column captions, pinned. An audit trail without a time axis is a
+   list; with one it is a record. */
+.entry.head {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--paper);
+  padding: 5px 0 4px;
+  font-size: 8px; font-weight: 500; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--ink-4);
+  border-bottom: 1px solid var(--line);
+}
+.entry .tm {
+  font-family: var(--mono); font-size: 9.5px;
+  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+}
+.entry.no .tm { color: var(--paper); opacity: .7; }
 .entry .v {
   font-size: 8.5px; font-weight: 600; letter-spacing: .12em;
   text-transform: uppercase; color: var(--ink-4);
@@ -289,7 +373,7 @@ body {
 /* ─── ask ───────────────────────────────────────────────────────────────── */
 /* A rule you type on, in the reference's own manner. */
 
-.askRow { display: flex; gap: 8px; padding: 0 22px 12px; align-items: flex-end; }
+.askRow { display: flex; gap: 10px; padding: 0 22px 14px; align-items: flex-end; }
 .askRow input {
   flex: 1; min-width: 0;
   font-family: inherit; font-size: 12px; font-weight: 500;
@@ -310,21 +394,88 @@ body {
   border: 1px solid var(--line-2);
   font-size: 12px; line-height: 1.55;
   color: var(--ink-2);
-  max-height: 210px; overflow-y: auto;
+  /* Same trap the ledger fell into: a flex child in this column has content
+     but no intrinsic height its parent respects, so a full sidebar squeezes
+     it to nothing. A seventeen-step plan rendered all seventeen rows into
+     twenty-six pixels — correct, and invisible, which is the worst pair. */
+  flex: 0 0 auto;
+  min-height: 64px; max-height: 210px; overflow-y: auto;
   white-space: pre-wrap;
 }
 .answer.waiting { color: var(--ink-3); font-style: italic; }
 
+/* A produced file is a control, not a hyperlink. Default link blue is the
+   one hue that survived the palette being removed, and it read as a mistake
+   sitting under a job's own summary. This is the same inversion as a button,
+   with the rule underneath standing in for the arrow's affordance. */
+.answer a {
+  display: inline-block;
+  margin-top: 2px;
+  font-family: var(--mono); font-size: 11px;
+  color: var(--ink);
+  text-decoration: none;
+  border-bottom: 1px solid var(--ink);
+  padding: 2px 3px;
+}
+.answer a:hover { background: var(--ink); color: var(--paper); }
+.answer a:focus-visible { outline: 1px solid var(--ink); outline-offset: 2px; }
+
+/* ─── lessons ───────────────────────────────────────────────────────────── */
+/* The plan is the honest part of this feature: eight of seventeen steps are
+   performable, and the panel says so before a key is pressed. A step it will
+   not attempt is inverted — the same treatment the ledger gives a refusal,
+   because it is the same thing. */
+
+.pick {
+  flex: 1; min-width: 0;
+  appearance: none;
+  font-family: inherit; font-size: 11px; font-weight: 500;
+  color: var(--ink);
+  background: transparent;
+  border: 0; border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  padding: 6px 2px;
+}
+.pick:focus { outline: none; border-bottom-width: 2px; }
+.pick:disabled { opacity: .35; }
+
+.plan { font-family: var(--mono); font-size: 11px; line-height: 1.45; }
+.plan .planHead {
+  font-size: 9px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--ink-3);
+  padding-bottom: 7px; margin-bottom: 6px;
+  border-bottom: 1px solid var(--line-2);
+}
+.plan .step { display: flex; gap: 9px; padding: 2px 0; }
+.plan .step .n { color: var(--ink-3); min-width: 20px; text-align: right; flex-shrink: 0; }
+.plan .step .s { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+
+/* Skipped: stated, but quiet. It happened, it is in the ledger, and it is
+   not the thing anyone needs to look at. */
+.plan .step.skip { color: var(--ink-4); }
+.plan .step.skip .n { color: var(--ink-4); }
+
+/* Inverted, not coloured — it survives being projected badly or printed.
+   Reserved for the step that stopped the work, and for a plan's "will not
+   attempt", where the whole point is to be counted before pressing Run. */
+.plan .step.cannot {
+  background: var(--ink); color: var(--paper);
+  padding: 3px 6px; margin: 2px -6px;
+}
+.plan .step.cannot .n { color: var(--paper); opacity: .55; }
+
 /* ─── terminal ──────────────────────────────────────────────────────────── */
 
 .term {
-  margin: 0 22px 8px;
-  padding: 10px 12px;
+  margin: 0 22px 10px;
+  padding: 12px 14px;
   background: var(--ink);
   color: var(--paper);
   font-family: var(--mono);
-  font-size: 10.5px; line-height: 1.5;
-  height: 150px; overflow-y: auto;
+  font-size: 11px; line-height: 1.55;
+  /* Grows with what has been run instead of clipping three lines into a
+     letterbox — it was the most cramped thing on the panel. */
+  min-height: 170px; max-height: 300px; overflow-y: auto;
   white-space: pre-wrap; word-break: break-word;
 }
 .term:empty::before {
@@ -389,7 +540,13 @@ body {
 
 #stage::after {
   content: "SHISHYA · LOCAL";
-  position: fixed; right: 352px; bottom: 14px;
+  position: fixed; right: 416px; bottom: 14px;
+  font-size: 8.5px; letter-spacing: .2em; color: var(--ink-4);
+  pointer-events: none;
+}
+#stage::before {
+  content: "1440 × 900 · SANDBOXED";
+  position: fixed; left: 26px; bottom: 14px;
   font-size: 8.5px; letter-spacing: .2em; color: var(--ink-4);
   pointer-events: none;
 }
@@ -404,5 +561,5 @@ body {
 @media (max-width: 900px) {
   #stage { flex-direction: column; }
   .pane.col { width: auto; border-left: none; border-top: 1px solid var(--line); }
-  #stage::after { display: none; }
+  #stage::after, #stage::before { display: none; }
 }

@@ -18,7 +18,7 @@
     <button id="btnTheme" class="themeSwap" title="Light, dark, or follow the system">Auto</button>
     <div class="kv"><span>Sandbox</span><b id="vmState">Checking</b></div>
     <div class="kv"><span>Egress</span><b id="netState" class="locked">Locked</b></div>
-    <div class="kv"><span>Web</span><b id="browseState" class="locked">BLocked</b></div>
+    <div class="kv"><span>Web</span><b id="browseState" class="locked">Blocked</b></div>
     <div class="kv"><span>Denied</span><b id="denyCount">0</b></div>
   </div>
 </header>
@@ -35,26 +35,71 @@
       </div>
     </div>
     <!-- noVNC is served from inside the VM itself (port 6080, forwarded).
-         An iframe until the recorder needs raw framebuffer access. -->
+         An iframe until the recorder needs raw framebuffer access.
+
+         resize=scale, never resize=remote. Remote resizing would fit the
+         framebuffer to this pane exactly and give crisp 1:1 pixels — and it
+         would also change the sandbox's resolution, which is pinned at
+         1440x900 because taught procedures reference on-screen layout. A
+         sharper picture is not worth silently invalidating every recorded
+         lesson.
+
+         quality=9 rather than noVNC's default 6. Quality is the JPEG level
+         Tight uses on photographic regions; at 6 the numbers in a spreadsheet
+         smear, and a spreadsheet being read over this stream is the whole
+         demonstration. The extra bytes cost nothing worth counting over a
+         loopback port-forward.
+
+         bell=off — noVNC rings the X bell as an audible beep. Something in
+         LibreOffice rings it on a bad cell reference. -->
     <div class="screen">
       <!-- allow=fullscreen: noVNC's own toolbar has a fullscreen button, and
            without this the iframe's permissions policy blocks it and noVNC
            shows a red error card over the clone's screen. -->
       <iframe id="vnc" title="clone display" allow="fullscreen"
-              src="http://localhost:6080/vnc.html?autoconnect=1&reconnect=1&reconnect_delay=1500&resize=scale&view_only=0"></iframe>
+              src="http://localhost:6080/vnc.html?autoconnect=1&reconnect=1&reconnect_delay=1500&resize=scale&view_only=0&quality=9&compression=2&bell=off"></iframe>
       <div id="screenMsg" class="msg">connecting to the sandbox</div>
     </div>
   </section>
 
   <!-- ─── ledger ─────────────────────────────────────────────────────── -->
   <aside class="pane col">
-    <div class="paneHead"><span>Permission ledger</span></div>
+    <!-- Waiting on a person. Above everything else because somebody is
+         standing at a counter while this sits here. -->
+    <div class="paneHead">
+      <span>Waiting for you</span>
+      <span id="askCount" class="muted"></span>
+    </div>
+    <div id="asks" class="answer">Nothing is waiting.</div>
+
+    <div class="paneHead">
+      <span>To do</span>
+      <span id="taskCount" class="muted"></span>
+    </div>
+    <div id="tasks" class="answer">Nothing on the list.</div>
+    <div class="askRow">
+      <input id="taskBox" type="text" placeholder="Something to do, then Enter" />
+      <button id="btnTaskAlerts" class="tool ghost">From alerts</button>
+    </div>
+
+    <div class="paneHead">
+      <span>Needs attention</span>
+      <span id="alertAge" class="muted"></span>
+    </div>
+    <div id="alerts" class="answer">Nothing checked yet.</div>
+
+    <div class="paneHead">
+      <span>Permission ledger</span>
+      <span id="roleNote" class="muted"></span>
+    </div>
     <div id="ledger" class="ledger"></div>
 
     <div class="paneHead"><span>Open on the clone’s desktop</span></div>
     <div id="apps" class="controls">
       <button class="tool" data-app="chat_app.py">Talk to it</button>
       <button class="tool" data-app="findings_app.py">Findings</button>
+      <button class="tool" data-app="reports_app.py">Reports</button>
+      <button class="tool" data-app="billing_app.py">Billing</button>
       <button class="tool" data-app="training_app.py">Training data</button>
       <button class="tool" data-app="make_app.py">Make a document</button>
       <button class="tool" data-app="code_app.py">Code</button>
@@ -66,6 +111,24 @@
       <button class="tool" data-app="inbox_app.py">Inbox</button>
       <button id="btnCloseAll" class="tool ghost">Close all</button>
     </div>
+
+    <div class="paneHead">
+      <span>Lessons</span>
+      <span id="lessonNote" class="muted">none learned yet</span>
+    </div>
+    <div class="askRow">
+      <select id="lessonPick" class="pick" aria-label="Lesson to perform"></select>
+      <button id="btnPlan" class="tool">Plan</button>
+    </div>
+    <!-- Plan is not decoration. The executor performs what it recognises and
+         refuses the rest, and the honest thing is to show which is which
+         before anything types into a real file. Run is dashed for the same
+         reason browsing is: reversible, but only through Roll back. -->
+    <div class="controls" style="padding-top:0">
+      <button id="btnRunLesson"  class="tool warnish">Run it</button>
+      <button id="btnStopLesson" class="tool ghost">Stop</button>
+    </div>
+    <div id="lessonOut" class="answer">Pick a lesson, then Plan to see what it would do.</div>
 
     <div class="paneHead"><span>Ask the clone</span></div>
     <div class="askRow">
@@ -87,6 +150,55 @@
       <button id="btnSources" class="tool">Use as sources</button>
     </div>
 
+    <!-- The other direction. Files go in by being dropped above; this is
+         how they come back out. Everything here is already on the Mac —
+         shared/ is a mount — but buried in a path nobody opens, so the
+         panel browses it and the browser saves it wherever you keep files. -->
+    <div class="paneHead">
+      <span>Take from the clone</span>
+      <span id="takeWhere" class="muted"></span>
+    </div>
+    <div class="controls" style="padding-bottom:6px">
+      <button class="tool" data-take="work">Work</button>
+      <button class="tool" data-take="billing">Books</button>
+      <button class="tool" data-take="traces">Lessons</button>
+      <button class="tool" data-take="inbox">Inbox</button>
+    </div>
+    <div id="takeList" class="answer">Pick a folder.</div>
+
+    <!-- The work-order flow. "Use as sources" is learning — the clone reads
+         the files and answers from them. This is working: the waiting files
+         are handed over as the job's inputs, and the deliverable comes back
+         as files listed below, each a download. -->
+    <div class="paneHead">
+      <span>Give it the job</span>
+      <span id="jobNote" class="muted">uses the files waiting above</span>
+    </div>
+    <div class="askRow">
+      <input id="jobBox" type="text"
+             placeholder="What should be done with them? Then Enter" />
+      <button id="btnJob" class="tool">Do it</button>
+    </div>
+    <!-- The report is not a free-form job: fixed shape, written code, the
+         model only says which column is the class and which are the marks.
+         Averages per group, the trend across months, top and bottom five —
+         one HTML file with every chart, and each chart as its own PNG. -->
+    <div class="controls" style="padding-top:0">
+      <button id="btnReport" class="tool">Make a report from them</button>
+      <!-- Fixed-shape converter, not a generated program: an accounting
+           file is where an invented number does real damage. The XML is
+           re-parsed and re-checked before it is offered, and the summary
+           says to import into a TEST company first. -->
+      <button id="btnTally" class="tool warnish">Make Tally vouchers</button>
+      <!-- Reads the shop's own books rather than the inbox, so it takes no
+           files and can run with nobody here. The same runner the schedule
+           fires — pressing this is just asking for it now. -->
+      <button id="btnAudit" class="tool">Audit the shop now</button>
+      <button id="btnBackup" class="tool">Back up the books</button>
+    </div>
+    <div id="schedNote" class="muted" style="padding:0 22px 14px"></div>
+    <div id="jobOut" class="answer">Drop the work files above, then say what to do with them.</div>
+
     <div class="paneHead">
       <span>Terminal</span>
       <span class="muted">in the sandbox, as clone</span>
@@ -95,6 +207,21 @@
     <div class="askRow">
       <input id="termIn" type="text" placeholder="A command, then Enter" spellcheck="false" />
       <button id="btnRun" class="tool">Run</button>
+    </div>
+
+    <!-- Names only, never values. This page is on a machine somebody else
+         might be looking at, and a secret you can read off a screen is not
+         one. The store itself lives outside every mount — the sandbox
+         cannot read it, which is the whole design. -->
+    <div class="paneHead">
+      <span>Secrets</span>
+      <span id="vaultWhere" class="muted"></span>
+    </div>
+    <div id="vaultList" class="answer">Head only.</div>
+    <div class="askRow">
+      <input id="secretName" type="text" placeholder="name" />
+      <input id="secretValue" type="password" placeholder="value" />
+      <button id="btnSecret" class="tool">Keep</button>
     </div>
 
     <div class="paneHead"><span>Sandbox</span></div>
@@ -107,6 +234,10 @@
       <button id="btnNet"    class="tool">Unlock network</button>
       <button id="btnBrowse" class="tool warnish">Allow browsing</button>
       <button id="btnFix"    class="tool warnish">Fix input</button>
+      <!-- Which controls this panel offers. Not a security boundary — the
+           sandbox is — but the person on the till should not be one slip
+           away from voiding yesterday or rolling the machine back. -->
+      <button id="btnRole"   class="tool">Working as…</button>
     </div>
     <div id="log" class="log"></div>
   </aside>
