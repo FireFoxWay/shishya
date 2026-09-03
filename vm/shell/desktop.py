@@ -37,6 +37,41 @@ TASKBAR_H = 48
 APPS = Path(__file__).resolve().parent
 
 
+# ─── is anyone actually looking? ────────────────────────────────────────────
+# The animated wallpaper repaints the whole 1440x900 screen several times a
+# second. That is affordable when someone is watching it and pure waste when
+# nobody is — and it is worse than waste over VNC, because every repaint is a
+# full-screen frame x11vnc has to encode and ship down the wire. An idle
+# sandbox was producing a continuous video stream of a picture nobody had
+# open. Measured: 19% of a core in Xvfb plus 13% in this process, forever.
+#
+# The signal is the noVNC bridge's own socket. websockify listens on 6080 and
+# a browser tab connected to it shows up as an ESTABLISHED entry; close the
+# tab and the entry goes. Read straight from /proc rather than shelling out to
+# `ss`, because this is checked once a second for the life of the machine.
+NOVNC_PORT = 6080
+
+
+def watching():
+    """True when a browser has the clone's screen open."""
+    want = f":{NOVNC_PORT:04X}"
+    for table in ("/proc/net/tcp", "/proc/net/tcp6"):
+        try:
+            with open(table) as fh:
+                next(fh, None)                       # header
+                for line in fh:
+                    col = line.split()
+                    # local_address is host:port in hex; 01 is ESTABLISHED.
+                    if len(col) > 3 and col[3] == "01" and col[1].endswith(want):
+                        return True
+        except OSError:
+            # No /proc/net/tcp means we cannot tell. Assume someone is there:
+            # a wallpaper that stops for no reason is a bug people can see,
+            # and one that runs when it needn't is only a cost.
+            return True
+    return False
+
+
 # ─── look ───────────────────────────────────────────────────────────────────
 # Flat, cool-grey, one blue accent. Restrained on purpose: this is the
 # backdrop the actual work happens on, and every extra colour here is one
@@ -159,10 +194,12 @@ def apply_look(look):
 MENU = [
     ("Shishya — talk to it", "user-available",  lambda: app("chat_app.py")),
     (None, None, None),
+    ("Billing",           "emblem-money",         lambda: app("billing_app.py")),
     ("Files",             "system-file-manager",  lambda: app("files_app.py")),
     ("Inbox",             "mail-message-new",     lambda: app("inbox_app.py")),
     (None, None, None),
     ("Findings",          "dialog-warning",       lambda: app("findings_app.py")),
+    ("Reports",           "x-office-presentation", lambda: app("reports_app.py")),
     ("Training Data",     "emblem-documents",     lambda: app("training_app.py")),
     ("Shishya",           "system-run",           lambda: app("shishya_app.py")),
     (None, None, None),
@@ -171,6 +208,14 @@ MENU = [
     ("Sheets",            "x-office-spreadsheet", lambda: app("sheet_app.py")),
     ("LibreOffice Calc",  "x-office-spreadsheet", lambda: office("--calc")),
     ("LibreOffice Writer", "x-office-document",   lambda: office("--writer")),
+    (None, None, None),
+    # Native Linux work apps, provisioned 23 Aug 26. The Windows staples —
+    # Tally Prime, Busy, Marg — cannot run in an arm64 Linux sandbox at all;
+    # what stands in: GnuCash for the accounting slot, and jobs that produce
+    # the XML Tally imports (see training/tally-import-notes.md).
+    ("GnuCash",           "gnucash",              lambda: native("gnucash")),
+    ("GIMP",              "gimp",                 lambda: native("gimp")),
+    ("Inkscape",          "org.inkscape.Inkscape", lambda: native("inkscape")),
     (None, None, None),
     ("Work folder",       "folder-documents",     lambda: files(WORK)),
     ("Lessons",           "folder-templates",     lambda: files(LESSONS)),
@@ -213,6 +258,17 @@ def app(name, *args):
     # should leave a trace somewhere, not just fail to appear.
     log = open(f"/tmp/{name}.log", "a")
     subprocess.Popen([sys.executable, str(target), *args], stdout=log, stderr=log)
+
+
+def native(*cmd):
+    """A real installed program, checked for before launching. Popen of a
+    missing binary fails in the child, not in us — the Work-folder icon
+    taught that lesson — so the absence is said out loud instead."""
+    import shutil
+    if shutil.which(cmd[0]) is None:
+        return notice(f"{cmd[0]} is not installed in this sandbox")
+    log = open(f"/tmp/{cmd[0]}.log", "a")
+    subprocess.Popen(list(cmd), stdout=log, stderr=log)
 
 
 def terminal():
@@ -271,6 +327,9 @@ class Desktop(Gtk.Window):
         self.ticker = None
         self.live_name = None
         self.fps = 0                     # 0 means "use the wallpaper's own rate"
+        self.rate = 0                    # the rate the wallpaper itself asked for
+        self.busy = False                # the model is thinking
+        self.seen = True                 # a browser has the screen open
 
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.stack.add_overlay(outer)
@@ -292,36 +351,42 @@ class Desktop(Gtk.Window):
         return True
 
     def set_live(self, on):
-        # `on` is the wallpaper's name — "galaxy", "matrix" — or a falsy value
-        # for a plain colour. Switching between two live ones means tearing
-        # the old one down first, or the new choice never takes.
+        """Choose the wallpaper. `on` is its name — "galaxy", "matrix" — or a
+        falsy value for a plain colour.
+
+        Switching between two live ones means tearing the old one down first,
+        or the new choice never takes.
+        """
         if on and self.live_name != on:
             self.set_live(None)
             self.live_name = on
         elif not on:
             self.live_name = None
-        self.fps = 0                     # 0 means "use the wallpaper's own rate"
-        """Start or stop the animated wallpaper.
 
-        Stopped means stopped: the timer is removed rather than left running
-        against a hidden surface. The clone is doing real work on four cores
-        and the desktop must not take a slice of it for a background nobody
-        is looking at.
-        """
         if on and self.galaxy is None:
-            self.galaxy, fps = make_wallpaper(on)
-            # Parenthesised: `1000 / self.fps or fps` divides first and
-            # raises ZeroDivisionError when no rate has been chosen.
-            self.ticker = GLib.timeout_add(int(1000 / (self.fps or fps)), self._tick)
+            self.galaxy, self.rate = make_wallpaper(on)
         elif not on and self.galaxy is not None:
-            if self.ticker:
-                GLib.source_remove(self.ticker)
-            self.ticker = None
             self.galaxy = None
             self.canvas.queue_draw()
+        self._retime()
+
+    # ── when the animation is allowed to run ────────────────────────────────
+    # Three separate things can silence it, and they used to fight: whichever
+    # one spoke last won, so answering a question with the panel closed left
+    # the wallpaper spinning afterwards. They are gates now, not commands —
+    # every one of them has to be open before a frame is drawn.
+    def _retime(self):
+        want = bool(self.galaxy) and not self.busy and self.seen
+        if want and self.ticker is None:
+            rate = self.fps or self.rate or 12
+            self.ticker = GLib.timeout_add(int(1000 / rate), self._tick)
+        elif not want and self.ticker is not None:
+            GLib.source_remove(self.ticker)
+            self.ticker = None
 
     def _tick(self):
         if self.galaxy is None:
+            self.ticker = None
             return False
         self.galaxy.step()
         self.canvas.queue_draw()
@@ -332,21 +397,28 @@ class Desktop(Gtk.Window):
 
         The sandbox has four cores and the model wants all of them. Drawing
         4,200 points fourteen times a second is affordable when nothing else
-        is happening and rude when an answer is being waited on, so the timer
-        is removed for the duration.
+        is happening and rude when an answer is being waited on.
 
         The galaxy object is kept — rebuilding it means regenerating every
         point, and the picture would visibly flicker each time somebody asked
-        a question. Frozen mid-turn it just looks still.
+        a question. Frozen mid-turn it just looks still. Getting the frame
+        rate back used to mean calling make_wallpaper() purely to read the
+        number off it, which built and discarded 5,100 points every time the
+        clone finished thinking; the rate is remembered instead.
         """
-        if self.galaxy is None:
-            return
-        if busy and self.ticker is not None:
-            GLib.source_remove(self.ticker)
-            self.ticker = None
-        elif not busy and self.ticker is None:
-            _, fps = make_wallpaper(self.live_name)
-            self.ticker = GLib.timeout_add(int(1000 / (self.fps or fps)), self._tick)
+        self.busy = busy
+        self._retime()
+
+    def set_seen(self, seen):
+        """Stop animating when nobody has the screen open.
+
+        This is the one that matters most. Every frame is a full-screen
+        repaint, and over VNC a full-screen repaint is a full-screen frame to
+        encode and send. With no viewer attached the sandbox was generating a
+        video stream into a socket that nobody was reading from.
+        """
+        self.seen = seen
+        self._retime()
 
     def relabel(self, look):
         # A changed frame rate has to tear the timer down and rebuild it;
@@ -413,6 +485,12 @@ class Taskbar(Gtk.Window):
         self.clock.get_style_context().add_class("clock")
         bar.pack_end(self.clock, False, False, 0)
 
+        # What is currently on the taskbar, so it can be left alone when
+        # nothing has changed. None rather than [] so the first pass always
+        # paints, including the empty case.
+        self.shown = None
+        self.state = None
+
         self.tick()
         GLib.timeout_add_seconds(1, self.tick)
         GLib.timeout_add_seconds(2, self.refresh_tasks)
@@ -438,22 +516,35 @@ class Taskbar(Gtk.Window):
             state = self.STATE.read_text().strip() or "idle"
         except OSError:
             pass
-        text, css = self.PILLS.get(state, self.PILLS["idle"])
-        self.pill.set_text(text)
-        ctx = self.pill.get_style_context()
-        for _, c in self.PILLS.values():
-            ctx.remove_class(c)
-        ctx.add_class(css)
+        if state != self.state:
+            self.state = state
+            text, css = self.PILLS.get(state, self.PILLS["idle"])
+            self.pill.set_text(text)
+            ctx = self.pill.get_style_context()
+            for _, c in self.PILLS.values():
+                ctx.remove_class(c)
+            ctx.add_class(css)
 
-        for child in self.tasks.get_children():
-            self.tasks.remove(child)
-        for wid, title in open_windows():
-            b = Gtk.Button(label=ellipsis(title, 24))
-            b.get_style_context().add_class("task")
-            b.get_accessible().set_name(title)
-            b.connect("clicked", lambda _b, w=wid: raise_window(w))
-            self.tasks.pack_start(b, False, False, 0)
-        self.tasks.show_all()
+        # Rebuild only when the window list has actually changed. It used to
+        # tear down and recreate every button every two seconds regardless,
+        # which is three things at once: a repaint of the whole taskbar strip
+        # — 1440x48 of update for a picture identical to the last one, forever
+        # — a churn of the AT-SPI tree the executor grounds on, so a widget
+        # reference could go stale between being found and being pressed, and
+        # a stream of GTK allocations for no reason. The taskbar is now still
+        # unless something opened or closed.
+        windows = open_windows()
+        if windows != self.shown:
+            self.shown = windows
+            for child in self.tasks.get_children():
+                self.tasks.remove(child)
+            for wid, title in windows:
+                b = Gtk.Button(label=ellipsis(title, 24))
+                b.get_style_context().add_class("task")
+                b.get_accessible().set_name(title)
+                b.connect("clicked", lambda _b, w=wid: raise_window(w))
+                self.tasks.pack_start(b, False, False, 0)
+            self.tasks.show_all()
         return True
 
     def on_start(self, button):
@@ -518,20 +609,43 @@ class Taskbar(Gtk.Window):
 
 def open_windows():
     """Ask X directly rather than tracking windows ourselves — apps started
-    outside this shell (by the executor, say) must appear too."""
+    outside this shell (by the executor, say) must appear too.
+
+    One xdotool, not one per window. This used to run `search` and then a
+    `getwindowname` for every result — with three windows open that is four
+    processes spawned every two seconds, for as long as the machine is up,
+    on a box with four cores that is also encoding a video stream. xdotool
+    chains commands itself: `search ... getwindowname %@` prints one name per
+    match, in match order.
+
+    The chained form can misalign if a window closes between the two halves
+    of the command, so the count is checked and the old one-at-a-time walk is
+    kept as the fallback. Wrong names in a taskbar are worse than slow ones.
+    """
     try:
-        out = subprocess.run(["xdotool", "search", "--onlyvisible", "--name", "."],
-                             capture_output=True, text=True, timeout=4).stdout
+        ids = subprocess.run(["xdotool", "search", "--onlyvisible", "--name", "."],
+                             capture_output=True, text=True, timeout=4).stdout.split()
+        names = subprocess.run(
+            ["xdotool", "search", "--onlyvisible", "--name", ".", "getwindowname", "%@"],
+            capture_output=True, text=True, timeout=4).stdout.splitlines()
     except (subprocess.SubprocessError, FileNotFoundError):
         return []
+
+    if len(names) != len(ids):
+        names = []
+        for wid in ids:
+            try:
+                names.append(subprocess.run(["xdotool", "getwindowname", wid],
+                                            capture_output=True, text=True,
+                                            timeout=2).stdout.strip())
+            except subprocess.SubprocessError:
+                names.append("")
+
     seen = []
-    for wid in out.split():
-        try:
-            name = subprocess.run(["xdotool", "getwindowname", wid],
-                                  capture_output=True, text=True, timeout=2).stdout.strip()
-        except subprocess.SubprocessError:
-            continue
-        if name and name not in ("Desktop", "Taskbar") and name not in [t for _, t in seen]:
+    for wid, name in zip(ids, names):
+        name = name.strip()
+        if name and name not in ("Desktop", "Taskbar") \
+                and name not in [t for _, t in seen]:
             seen.append((wid, name))
     return seen[:8]
 
@@ -576,6 +690,15 @@ def main():
         if busy != state.get("busy"):
             state["busy"] = busy
             desktop.set_busy(busy)
+
+        # Cheap enough to ask every second: two small reads out of /proc, no
+        # process spawned. Doing it on a timer rather than on connect/disconnect
+        # hooks means it also recovers from a browser that vanished without
+        # closing its socket cleanly.
+        seen = watching()
+        if seen != state.get("seen"):
+            state["seen"] = seen
+            desktop.set_seen(seen)
         return True
 
     follow()

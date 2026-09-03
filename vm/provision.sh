@@ -111,87 +111,18 @@ Restart=always
 WantedBy=multi-user.target
 UNIT
 
-cat > /etc/systemd/system/shishya-display.service <<'UNIT'
-[Unit]
-Description=Shishya virtual display
-[Service]
-User=clone
-EnvironmentFile=/etc/shishya.env
-StartLimitIntervalSec=0
-ExecStart=/usr/bin/Xvfb :0 -screen 0 1440x900x24 -nolisten tcp
-Restart=always
-[Install]
-WantedBy=multi-user.target
-UNIT
-
-cat > /etc/systemd/system/shishya-wm.service <<'UNIT'
-[Unit]
-Description=Shishya window manager
-After=shishya-display.service shishya-atspi.service
-Requires=shishya-display.service shishya-atspi.service
-[Service]
-User=clone
-EnvironmentFile=/etc/shishya.env
-ExecStart=/usr/bin/openbox
-Restart=always
-[Install]
-WantedBy=multi-user.target
-UNIT
-
-cat > /etc/systemd/system/shishya-vnc.service <<'UNIT'
-[Unit]
-Description=Shishya VNC
-After=shishya-wm.service
-Requires=shishya-wm.service
-[Service]
-User=clone
-EnvironmentFile=/etc/shishya.env
-StartLimitIntervalSec=0
-# -shared so you can watch while the agent drives: take-the-wheel depends on
-# host and agent holding the same session at once, not taking turns.
-ExecStart=/usr/bin/x11vnc -display :0 -forever -shared -nopw -rfbport 5900 -noxdamage
-Restart=always
-[Install]
-WantedBy=multi-user.target
-UNIT
-
-cat > /etc/systemd/system/shishya-novnc.service <<'UNIT'
-[Unit]
-Description=Shishya noVNC bridge
-After=shishya-vnc.service
-Requires=shishya-vnc.service
-[Service]
-ExecStart=/usr/bin/websockify --web=/usr/share/novnc 6080 localhost:5900
-Restart=always
-[Install]
-WantedBy=multi-user.target
-UNIT
+# The display stack — Xvfb, openbox, x11vnc, the noVNC bridge — lives in its
+# own script. This file runs exactly once per machine, so anything defined
+# here can only be changed by rebuilding the VM; display.sh is idempotent and
+# can be re-run against a machine that is up, which is what the panel's
+# "Rebuild display" button now does.
+bash /opt/shishya/vm/display.sh --all
 
 # python-pptx is not packaged for 24.04. --break-system-packages is fine
 # here and only here: this is a disposable sandbox whose entire filesystem is
 # one `cp -c` away from being restored.
 pip3 install --break-system-packages --quiet python-pptx || \
   echo "shishya: WARNING python-pptx unavailable — PowerPoint output disabled"
-
-# The desktop itself is a service, not something launched from a shell.
-# Launching it over `limactl shell` never detached cleanly, so restarts left
-# duplicates stacked on top of each other — two desktops, two taskbars, and
-# clicks landing on whichever one happened to be on top.
-cat > /etc/systemd/system/shishya-desktop.service <<'UNIT'
-[Unit]
-Description=Shishya desktop shell
-After=shishya-wm.service shishya-atspi.service
-Requires=shishya-wm.service
-[Service]
-User=clone
-EnvironmentFile=/etc/shishya.env
-WorkingDirectory=/opt/shishya/vm/shell
-ExecStart=/usr/bin/python3 /opt/shishya/vm/shell/desktop.py
-Restart=always
-RestartSec=2
-[Install]
-WantedBy=multi-user.target
-UNIT
 
 # Create the LibreOffice profile once, then silence its welcome dialogs. Doing
 # it at provisioning time means the first launch anyone sees is already quiet.
@@ -218,6 +149,27 @@ RestartSec=10
 WantedBy=multi-user.target
 UNIT
 
+# Warm the model too, for the same reason LibreOffice is kept warm above.
+# Ollama unloads a model five minutes after its last use; the owner's is
+# 13.8GB and takes twenty to forty seconds to read back. This asks the host to
+# load it the moment the sandbox is up, so the first question of a session is
+# answered rather than waited on. Type=oneshot and it does not matter if it
+# fails — a cold model is slow, not broken.
+cat > /etc/systemd/system/shishya-warm.service <<'UNIT'
+[Unit]
+Description=Shishya model warm start
+After=shishya-desktop.service
+[Service]
+Type=oneshot
+User=clone
+EnvironmentFile=/etc/shishya.env
+WorkingDirectory=/opt/shishya/vm/shell
+ExecStart=/usr/bin/python3 -c "import common; print('warm:', common.warm())"
+TimeoutStartSec=330
+[Install]
+WantedBy=multi-user.target
+UNIT
+
 # The desktop as a service, so it is restarted rather than remembered.
 # Started by hand it stacked up silently — several desktops and several
 # taskbars at once, each drawing over the last. systemd keeps exactly one.
@@ -226,6 +178,11 @@ cat > /etc/systemd/system/shishya-desktop.service <<'UNIT'
 Description=Shishya desktop shell
 After=shishya-wm.service
 Requires=shishya-wm.service
+# Never give up. The default start limit makes systemd stop retrying after a
+# few quick failures, which is precisely when it is needed most. This lived
+# under [Service] until now, where systemd does not look for it — it logged
+# "Unknown key name ... ignoring" once per boot and gave up as usual.
+StartLimitIntervalSec=0
 [Service]
 User=clone
 EnvironmentFile=/etc/shishya.env
@@ -233,15 +190,12 @@ WorkingDirectory=/opt/shishya/vm/shell
 ExecStart=/usr/bin/python3 /opt/shishya/vm/shell/desktop.py
 Restart=always
 RestartSec=3
-# Never give up. The default start limit makes systemd stop retrying after a
-# few quick failures, which is precisely when it is needed most.
-StartLimitIntervalSec=0
 [Install]
 WantedBy=multi-user.target
 UNIT
 
 systemctl daemon-reload
-systemctl enable --now shishya-dbus shishya-display shishya-atspi shishya-wm shishya-vnc shishya-novnc shishya-desktop shishya-desktop
+systemctl enable --now shishya-dbus shishya-display shishya-atspi shishya-wm shishya-vnc shishya-novnc shishya-desktop shishya-warm
 
 # GTK apps check this before exposing anything to AT-SPI.
 sudo -u clone env DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/shishya-bus \
@@ -254,3 +208,9 @@ sudo -u clone env DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/shishya-bus \
   gsettings get org.gnome.desktop.interface toolkit-accessibility
 
 echo "shishya: desktop up on :0 — noVNC at http://localhost:6080/vnc.html"
+
+# One desktop, not openbox's four. The wheel over the desktop switches
+# workspace by default, so a scroll that misses a window blanks the screen and
+# looks exactly like the apps crashing — on a machine whose screen is watched
+# through a video stream by people who cannot tell the difference.
+sudo -u clone env HOME=/home/clone python3 /opt/shishya/vm/one-desktop.py || true

@@ -108,10 +108,10 @@ footer{margin-top:70px;padding-top:20px;border-top:1px solid var(--rule);
   <h1>Shishya Handbook</h1>
   <p class="sub">A local AI that reads your documents, decides what you need, and makes it — inside a sandbox that cannot reach your files or the internet unless you say so. This is everything needed to continue the work without re-deriving it.</p>
   <div class="facts">
-    <span class="fact"><b>8,639</b> lines</span>
-    <span class="fact"><b>35</b> source files</span>
-    <span class="fact"><b>41</b> commits</span>
-    <span class="fact"><b>18</b> sandbox apps</span>
+    <span class="fact"><b>15,421</b> lines</span>
+    <span class="fact"><b>72</b> source files</span>
+    <span class="fact"><b>42</b> commits</span>
+    <span class="fact"><b>16</b> sandbox apps</span>
     <span class="fact">host <b>24 GB / 14 cores</b></span>
     <span class="fact">model <b>gpt-oss:20b</b></span>
   </div>
@@ -214,7 +214,7 @@ footer{margin-top:70px;padding-top:20px;border-top:1px solid var(--rule);
   ───────────── three crossings ──┼─────────────────────────────────────────
      :6080   the clone's screen, into an iframe on the panel
      :11434  the model, reached from inside at host.lima.internal
-     virtiofs  shared/ — the only writable window between them</code></pre>
+     virtiofs  shared/ — the only writable window between them, both ways</code></pre>
 
   <h3>Why each piece sits where it does</h3>
   <ul>
@@ -236,8 +236,12 @@ footer{margin-top:70px;padding-top:20px;border-top:1px solid var(--rule);
     <thead><tr><th>File</th><th>What it does</th></tr></thead>
     <tbody>
       <tr><td><code>serve.py</code></td><td>Control panel server and JSON API. Stdlib only — a demo table is no place for a dependency that must resolve at start-up. Listens on 127.0.0.1 <em>and</em> ::1.</td></tr>
-      <tr><td><code>host/vm.py</code></td><td>Everything touching the VM: start, stop, snapshot, rollback, egress lock, browsing mode, launch app, close apps, drive app, run command, rebuild display.</td></tr>
+      <tr><td><code>host/vm.py</code></td><td>Everything touching the VM: start, stop, snapshot, rollback, egress lock, browsing mode, launch app, close apps, drive app, run command, rebuild display, and list / plan / run / stop a lesson.</td></tr>
       <tr><td><code>host/ledger.py</code></td><td>Append-only JSONL audit log. Nothing in it removes or rewrites a line.</td></tr>
+      <tr><td><code>host/secrets.py</code></td><td>Credentials, kept at <code>~/.shishya/</code> — outside the repository, because the whole repo is mounted into the sandbox and anything under it is readable by the clone. Names and lengths are served; values never are.</td></tr>
+      <tr><td><code>host/history.py</code></td><td>A git repository of the material — books, schedule, roles, learned procedures — separate from the source history, so "what did the shop do" and "what did we build" stay separate questions.</td></tr>
+      <tr><td><code>host/tasks.py</code></td><td>Work that outlives the alert that raised it. Idempotent by key: the same alert every evening is one task, not seven.</td></tr>
+      <tr><td><code>host/experiments.py</code></td><td>Which run, on which data, with which model — datasets fingerprinted so an old figure can say whether the file behind it has since changed.</td></tr>
       <tr><td><code>host/synth.py</code></td><td>Turns a recorded demonstration into an editable plain-language procedure.</td></tr>
       <tr><td><code>demo.sh</code></td><td>One command to a known-good state, and a check that catches the failures that actually happen. Starts Ollama if it has quit.</td></tr>
       <tr><td><code>web/</code></td><td>The panel: plain ES modules, no build step, no external references except one font import.</td></tr>
@@ -249,13 +253,24 @@ footer{margin-top:70px;padding-top:20px;border-top:1px solid var(--rule);
     <thead><tr><th>File</th><th>What it does</th></tr></thead>
     <tbody>
       <tr><td><code>vm/lima.yaml</code></td><td>The sandbox definition. Its mount list <em>is</em> the security boundary.</td></tr>
-      <tr><td><code>vm/provision.sh</code></td><td>Builds the desktop: dbus, Xvfb, openbox, AT-SPI, x11vnc, noVNC, LibreOffice, Falkon, every Python library, and the systemd units that keep them up.</td></tr>
+      <tr><td><code>vm/provision.sh</code></td><td>Builds the sandbox once: dbus, AT-SPI, LibreOffice, Falkon, every Python library, and the systemd units that keep them up. Hands the display stack to <code>vm/display.sh</code>.</td></tr>
+      <tr><td><code>vm/display.sh</code></td><td>Xvfb, openbox, x11vnc and the noVNC bridge, as re-runnable configuration. Split out of <code>provision.sh</code> because that runs once per machine: a display change used to mean rebuilding the VM. <code>--all</code> restarts X too and closes the clone's apps; without it only the video path is rebuilt.</td></tr>
       <tr><td><code>vm/recorder.py</code></td><td>Records a demonstration as semantic events, plus assembled keystrokes.</td></tr>
-      <tr><td><code>vm/executor.py</code></td><td>Performs a learned procedure. Four actions; stops rather than guessing.</td></tr>
-      <tr><td><code>vm/locate.py</code></td><td>Finds a control by name, returns a point, raises the owning window, checks occlusion.</td></tr>
+      <tr><td><code>vm/executor.py</code></td><td>Performs a learned procedure. Four actions; skips what it does not recognise, halts rather than guessing, and reads each cell back.</td></tr>
+      <tr><td><code>vm/locate.py</code></td><td>Finds a control by name, returns a point, raises the owning window, checks occlusion. Also reaches controls that have no name, and reads a named cell directly.</td></tr>
       <tr><td><code>vm/drive.py</code></td><td>Types into apps and presses buttons through AT-SPI — the path that works when the pointer does not.</td></tr>
       <tr><td><code>vm/tree.py</code></td><td>Dumps the accessibility tree. First thing to reach for when a recording is thin.</td></tr>
+      <tr><td><code>vm/one-desktop.py</code></td><td>One workspace, not openbox's four, and no wheel bindings that switch between them. Writes the clone's own rc.xml and fixes the running session as well.</td></tr>
       <tr><td><code>vm/lo-quiet.py</code></td><td>Silences LibreOffice's first-run dialogs, which are modal and poison a recording.</td></tr>
+      <tr><td><code>vm/worker.py</code></td><td>Does a job: reads the handed-over files, writes a program from the brief, runs it, and refuses a deliverable whose own summary admits invented data.</td></tr>
+      <tr><td><code>vm/reporter.py</code></td><td>The fixed-shape report: averages per group, the trend across months, top and bottom five. Written code; the model's one decision per table is which column is the group and which hold the scores.</td></tr>
+      <tr><td><code>vm/shell/books.py</code></td><td>The shop's books: GST-inclusive pricing, append-only sales, voids and returns as new rows. The one module that knows the schema — four programs each parsing the CSV is how a column comes to mean two things.</td></tr>
+      <tr><td><code>vm/shell/invoice.py</code></td><td>A tax invoice somebody can hand over: line items, tax broken out by GST rate, VOIDED stamped on a cancelled bill. HTML, so it prints from any browser.</td></tr>
+      <tr><td><code>vm/backup.py</code></td><td>A dated copy of the books into Work/Backups, with a plain-text summary. Deliberately not clever — a backup that needs this program to read it back is a hostage.</td></tr>
+      <tr><td><code>vm/alerts.py</code></td><td>What the shop should know without asking. Five at most, ranked by what it costs to ignore, each naming something to do today.</td></tr>
+      <tr><td><code>vm/bench.py</code></td><td>Which models can actually do the work: same known question to each, reporting whether the program ran, whether the figure was right, and what it cost in time and memory. Cloud models skipped — a benchmark of this machine has no business measuring something that is not on it.</td></tr>
+      <tr><td><code>vm/audit.py</code></td><td>The shop's daily audit, run unattended: takings, the profit of the day, the month, and what is running out. No model call in the file — see §06.</td></tr>
+      <tr><td><code>vm/tally.py</code></td><td>Purchase register → Tally Prime import XML. Written code with the import rules enforced by construction, re-parsed and re-checked before it is offered.</td></tr>
       <tr><td><code>vm/shell/*.py</code></td><td>The desktop shell and eighteen apps.</td></tr>
     </tbody>
   </table></div>
@@ -281,9 +296,77 @@ footer{margin-top:70px;padding-top:20px;border-top:1px solid var(--rule);
       <tr><td><b>System</b> <code>system_app.py</code></td><td>Live cores, memory, disk; controls what the desktop may spend.</td><td class="yes">works</td></tr>
       <tr><td><b>Settings</b> <code>settings_app.py</code></td><td>Wallpaper, accent, icon size. Applies live.</td><td class="yes">works</td></tr>
       <tr><td><b>Terminal</b> (xterm)</td><td>A real pty on the clone's desktop.</td><td class="yes">works</td></tr>
-      <tr><td><b>Shishya (teach)</b> <code>shishya_app.py</code></td><td>Record a lesson, read the procedure, edit it.</td><td class="maybe">records and writes; run button not yet wired to the executor</td></tr>
+      <tr><td><b>Billing</b> <code>billing_app.py</code></td><td>The counter. Search, click, save — and the shop's books update. This is where the data now comes from.</td><td class="yes">works — three bills rung up over AT-SPI, stock decremented</td></tr>
+      <tr><td><b>Reports</b> <code>reports_app.py</code></td><td>Tick the files, name the report, get averages, trends and best/worst as charts in the window and files in Work/Reports.</td><td class="yes">works — driven end to end over AT-SPI</td></tr>
+      <tr><td><b>Shishya (teach)</b> <code>shishya_app.py</code></td><td>Record a lesson, read the procedure, edit it.</td><td class="yes">records, writes and runs — running is driven from the control panel, and a run that meets a step it does not know now asks</td></tr>
     </tbody>
   </table></div>
+
+  <h3>Native work apps, and what cannot run</h3>
+  <p>Installed 23 Aug 26, ledger-logged (browsing opened for apt, closed after): <b>GnuCash</b> for the accounting slot, <b>GIMP</b> and <b>Inkscape</b> for graphics, and <b>tesseract + ocrmypdf</b> with English, Hindi and Telugu — a scanned PDF now OCRs automatically when its text layer is empty, which used to be a dead end. Evince was already present. The Windows staples — <b>Tally Prime, Busy, Marg — cannot run here at all</b> (Windows, x86); what stands in is producing the files they import, which is what <code>vm/tally.py</code> is for.</p>
+
+  <h3>The work-order flow — files in, one line of intent, files out</h3>
+  <p>Drop files on the panel, then one of three buttons. Each stages the inbox into <code>shared/jobs/&lt;stamp&gt;/in</code>, runs its runner in the sandbox, streams state through <code>status.json</code>, and lists what landed in <code>out/</code> as downloads. One at a time, logged before it runs, finish recorded once — a failure as <code>deny</code>.</p>
+  <div class="tw"><table>
+    <thead><tr><th>Button</th><th>Runner</th><th>Shape</th></tr></thead>
+    <tbody>
+      <tr><td><b>Do it</b></td><td><code>worker.py</code></td><td>The brief becomes a program. A retry is only accepted if it produces more than the first attempt, and a summary confessing dummy or placeholder data fails the job rather than delivering the file.</td></tr>
+      <tr><td><b>Make a report from them</b></td><td><code>reporter.py</code></td><td>Fixed: written code draws, the model only names columns, heuristics answer when it will not. report.html plus a PNG per chart.</td></tr>
+      <tr><td><b>Make Tally vouchers</b></td><td><code>tally.py</code></td><td>Fixed: ledgers before vouchers, dates YYYYMMDD, debits negative, every voucher zero in paise, names escaped, spellings deduplicated — checked by re-parsing the file on disk. A file that fails its own checks is withdrawn.</td></tr>
+    </tbody>
+  </table></div>
+  <p>The download endpoint takes a job id matching the stamp pattern and a bare filename resolved inside that job's <code>out/</code> — both traversal attempts in testing were refused before touching the filesystem.</p>
+
+  <h3>Taking things back off the clone</h3>
+  <p>Files go in by being dropped on the panel. This is the way out: <b>Take from the clone</b> browses Work, the books, the lessons and the inbox a folder at a time, and every file is a download.</p>
+  <p>The honest starting point is that they were never trapped. <code>shared/</code> is a virtiofs mount, so a report the clone wrote this morning is already on this Mac's disk — <em>buried in a project folder nobody opens</em>. "It is already there, in a path you have never navigated to" is not a feature anybody can use, and the browser saving it wherever the person actually keeps files is the part the mount cannot do for them.</p>
+  <div class="box b-note">
+    <span class="lbl">Both directions belong in the ledger</span>
+    <p>Dropping a file wrote <code>file.in</code> from the first week. Nothing wrote <code>file.out</code>, so material leaving the sandbox left no trace at all — on a panel whose argument is that every crossing is recorded. Taking a file now logs <code>allow file.out</code> with its size and the folder it came from.</p>
+  </div>
+  <p>The containment is the same rule as everywhere else: a browser asking for a path is asking a program running on the Mac, and that program resolves it and refuses anything that is not inside the folder it was given. <code>resolve()</code> and a prefix test rather than a string check, because <code>../</code> is only the obvious attempt — a symlink inside <code>shared/</code> pointing at the home directory would pass any amount of string inspection. Half-written <code>.part</code> and <code>.tmp</code> files are never offered: handing out a file that is still being written is the upload bug in reverse.</p>
+
+  <h3>The shop's own books</h3>
+  <p>Until the Billing app, everything here read files somebody exported from somewhere else. The counter produces the shop's data as it happens — two plain CSVs under <code>shared/billing/</code>, seeded on first run from whatever inventory is in the material folder, so it opens stocked rather than empty:</p>
+  <div class="tw"><table>
+    <thead><tr><th>File</th><th>What it holds</th></tr></thead>
+    <tbody>
+      <tr><td><code>catalogue.csv</code></td><td>What is stocked, its cost, price, stock on hand and reorder point. Rewritten whole and renamed into place, because the scheduled audit reads it while the counter is open.</td></tr>
+      <tr><td><code>sales.csv</code></td><td>One row per line item, <b>append-only</b> — for the same reason the permission ledger is. A record of takings the software can quietly rewrite is not a record of takings; a mistake is corrected by a new line.</td></tr>
+    </tbody>
+  </table></div>
+  <p><b>Cost is carried on every sale line, at the cost on the day of sale.</b> Prices change, and recomputing a month's margin from today's catalogue cost is exactly how the inventory workbook's profit became three times too good (§16). The audit sums <code>profit</code>; it never recomputes it.</p>
+  <p>Plain CSV on purpose: the chat, a job, a report and a person with a spreadsheet all read the same two files, and a format that needs a library to open is a format nobody can audit. The books are named separately in every model prompt, so the model is never guessing whether a row is history or this afternoon.</p>
+
+  <h3>GST, voids and returns</h3>
+  <p>Indian retail prices are quoted inclusive of tax, so <code>price</code> is what the customer pays and the GST inside it is <code>price × rate ÷ (100 + rate)</code>. Storing it the other way round makes every shelf label wrong. The rate is <b>per product</b>, because a shop sells 0%, 5%, 12% and 18% goods on one bill and a blended rate on the total is not a legal invoice.</p>
+  <p>Nothing is ever edited or deleted. A <b>return</b> is a negative-quantity row naming the bill it came from; a <b>void</b> is one reversing row per outstanding line. A day's takings are the sum of that day's rows, and that sum is right whether or not anything was cancelled — the only property that makes a till roll worth keeping.</p>
+  <div class="box b-bad">
+    <span class="lbl">Voiding a bill that had already been part-returned</span>
+    <p>The first version reversed the original quantity. Return one of two and then void, and the customer was credited for three of the two they bought, with three units going back on a shelf that only ever lost two. The bill settled at <b>minus its own value</b>. A void now reverses only what is still outstanding, and refuses when a bill has already come back in full. Three combinations tested — plain void, part-returned then voided, fully returned then voided — all settle at exactly zero with stock back where it started.</p>
+  </div>
+
+  <h3>Asking, when the answer is no</h3>
+  <p>Roles say what a clerk may not do, which is half an answer. Being refused with no way to ask is how people work around software: a clerk who cannot void a mistaken bill rings up a correcting sale instead, and the books carry two wrong entries rather than one right correction.</p>
+  <p>So a refusal became a request. The clerk presses <b>Ask to void</b>, the head sees it under <i>Waiting for you</i> on the panel, and the decision is recorded — <code>approval.granted</code> or <code>approval.refused</code>, in the ledger like everything else. <b>Approving records the decision; the app that asked performs the action</b> and marks it done. Kept apart deliberately: a decision that half-performed something would leave the books in a state nobody asked for.</p>
+  <p>Refuses to decide twice, because a request approved twice would void a bill twice and the second would look exactly as legitimate as the first. The clerk cannot approve their own request — checked in the server, not only hidden in the panel.</p>
+
+  <h3>Who is at the counter</h3>
+  <p>Two roles, <code>clerk</code> and <code>head</code>, in <code>shared/.role</code>. The clerk rings up sales, prints bills and takes returns. The head additionally voids, rolls back, changes the network, snapshots, schedules, and uses the terminal.</p>
+  <p><b>It is not a security boundary and is never described as one.</b> The sandbox, the mount list and the absence of sudo are the boundary; this file sits inside the very sandbox it describes. What it is for is that the person on the till should not be one slip away from cancelling yesterday's takings. The permitted list is written out rather than inferred, so adding a control means deciding who it is for.</p>
+
+  <h3>Runs that happen with nobody there</h3>
+  <p>Set in the Reports app — <i>Every day at 18:00 · Shop audit</i> — written to <code>shared/.schedules.json</code>, which the panel's scheduler re-reads every 45 seconds. Nothing is restarted and nothing is told to reload.</p>
+  <ul>
+    <li><b>A scheduled run takes no files.</b> Its input is the shop's books; emptying the inbox at six would steal what somebody staged that afternoon for a job they had not started.</li>
+    <li><b>Due is compared against the clock, not counted from the last run.</b> A laptop asleep at six fires once when it wakes, late — not four times, which is what a naive interval would do.</li>
+    <li><b>The fire is logged with <code>actor=system</code></b>, which is the point: the ledger can say a thing happened that nobody asked for at that moment, and show when.</li>
+  </ul>
+  <div class="box b-good">
+    <span class="lbl">Measured — 24 Aug 26</span>
+    <p>Three bills rung up at the counter through the accessibility layer. Scheduled for 18:48; at <b>18:51:16</b> the panel fired it by itself and wrote <code>info schedule.fire Shop audit · actor=system · "due at 18:48 — nobody pressed anything"</code>. The audit reported <b>₹318.87 across 3 bills, ₹131.15 earned, Wine Glasses the most profitable product of the day at 35% of the day's profit</b>, and 149 products at or below their reorder point — the same 149 the earlier low-stock job found independently.</p>
+    <p>Asked separately <i>"what did we sell today and which product made the most profit"</i>, the chat wrote a program against <code>sales.csv</code> and returned the same figures to the paisa. The audit and the model agree because they are reading the same books.</p>
+  </div>
 
   <h3>Two live wallpapers</h3>
   <p><code>galaxy.py</code> is the notepro spiral ported to Cairo — four branches, spin 1.35, the same gradient from a hot yellow-white core to violet at the rim. WebGL drew 12,000 points; this draws 4,200 at about 7% of one core, because points are batched into colour buckets rather than setting a Cairo source per point. <code>matrix.py</code> is falling glyphs at similar cost. <b>Both stop animating while the model works</b> — measured 6.7% → 0.4% → 6.7% across the transitions.</p>
@@ -320,6 +403,10 @@ footer{margin-top:70px;padding-top:20px;border-top:1px solid var(--rule);
     <li><b>Plurals fold to singular.</b> The two-term rule immediately broke what it was meant to protect — the sheet says "Cable", the question said "cables", one term landed, every HDMI row discarded.</li>
     <li><b>Weak passages are dropped.</b> Anything under two fifths of the best match. Before this, a question about HDMI suppliers was handed two blocks of an unrelated macOS-vs-Windows PDF, which the model had to read and reason past — and often ran out of room doing so.</li>
   </ul>
+
+  <h3>A question in another script finds the wrong document</h3>
+  <p>The index is terms weighted by rarity, so a question in Telugu shares nothing with an English policy — and does not simply fail. Asked in Telugu whether a student with 68% attendance may sit the exam, retrieval returned <b>four passages of the pharmacy inventory</b>, because <code>68</code> is the one thing both scripts agree on. That is the §08 coincidence failure again, and the two-term rule cannot help when only one term exists.</p>
+  <p>So a question that is not in Latin script is <b>translated for the search only</b>. The reply is written from the original, in the language it was asked in; the translation never reaches the person and is never shown as their words. One bounded model call, and a failed translation falls back to searching with the original rather than losing the question.</p>
 
   <h3>The model is told the shape of a sheet</h3>
   <p>Not only column names but: which columns hold few enough distinct values to list them all (<code>Stock Status contains only: In Stock, Low Stock</code>), which headers are real datetimes rather than text, and which columns repeat as families (<code>Purchased From 1..10</code> pairing with <code>Purchase Qty N</code>, which must be stacked before grouping). Each of these fixed a real failure.</p>
@@ -367,24 +454,80 @@ footer{margin-top:70px;padding-top:20px;border-top:1px solid var(--rule);
   <div class="tw"><table>
     <thead><tr><th>Action</th><th>How</th></tr></thead>
     <tbody>
-      <tr><td><code>goto</code> a named cell</td><td>Through the Name Box — one control, always present, always in the same place, where a cell may be scrolled out of view with no usable position</td></tr>
+      <tr><td><code>goto</code> a named cell</td><td>Through the Name Box, reached <em>through the toolbar that owns it</em> — it has no accessible name of its own. Always present, always in the same place, where a cell may be scrolled out of view with no usable position</td></tr>
       <tr><td><code>type</code> a value</td><td>Keyboard, then verified by looking for the value in the accessibility tree</td></tr>
       <tr><td><code>press</code> a named control</td><td><code>locate.py</code>, which raises the owning window first</td></tr>
       <tr><td><code>open</code> an application</td><td>A fixed list, not an arbitrary command</td></tr>
     </tbody>
   </table></div>
 
-  <p>Run it two ways:</p>
-<pre><code>python3 executor.py &lt;trace-dir&gt;         # the plan, no action
-python3 executor.py &lt;trace-dir&gt; --run   # actually do it</code></pre>
+  <p>Run it three ways — and from the panel, which is how it is actually used:</p>
+<pre><code>python3 executor.py &lt;trace-dir&gt;          # the plan, no action
+python3 executor.py &lt;trace-dir&gt; --run    # actually do it
+python3 executor.py &lt;trace-dir&gt; --json   # one event per line, for the panel</code></pre>
 
-  <div class="box b-note">
-    <span class="lbl">Measured on the real recorded lesson</span>
-    <p><b>8 of 17 steps performable</b> — and the 8 are exactly the substantive ones: go to I1, type "Exam Eligible", go to I2, type "Yes", go to I4, type "No - below 65%", go to I9, type "Principal - medical certificate".</p>
-    <p>The 9 it refuses are recorder noise: "Navigate to the main panel", "Navigate to the next applicant's row", and three steps of someone dismissing a save dialog. <b>Refusing those rather than guessing is the design.</b> A model this size guessing at an unrecognised instruction is how an apprentice confidently files the wrong thing, and a refusal you can read beats an action you cannot.</p>
+  <h3>Three outcomes, and they are not the same news</h3>
+  <p>The first version halted at the first step it did not recognise, and that made the whole feature inert: the one real recorded lesson opens with "Navigate to the main panel", which is recorder noise, so a run refused at step 1 and never reached the eight substantive steps behind it. The plan said 8 of 17 and the run performed 0.</p>
+  <div class="tw"><table>
+    <thead><tr><th>Outcome</th><th>What it means</th><th>What happens next</th></tr></thead>
+    <tbody>
+      <tr><td><code>skipped</code></td><td>I do not know how to do this</td><td>Recorded as a refusal; the run continues</td></tr>
+      <tr><td><code>step</code></td><td>Attempted. <code>ok</code> false means it was tried and could not be confirmed</td><td>Success continues; failure halts</td></tr>
+      <tr><td><code>halted</code></td><td>I could do this, but not safely from here</td><td>Stops, with the reason</td></tr>
+      <tr><td><code>ask</code></td><td>I do not know how — tell me</td><td>The run pauses; the panel shows the question with an answer box</td></tr>
+      <tr><td><code>taught</code></td><td>The answer was understood</td><td>The step is performed, and its new wording is saved into the procedure</td></tr>
+    </tbody>
+  </table></div>
+  <p><b>Skipping is not guessing</b>, and keeping the two apart is the whole design. But skipping is what makes the third outcome necessary.</p>
+
+  <div class="box b-warn">
+    <span class="lbl">Never type into a cell you cannot name</span>
+    <p>Skip "switch to the term 1 sheet" and the next instruction to type lands in whatever sheet happens to be in front — silently, in the right-looking cell of the wrong table. So the cursor's position is tracked: a step that types without naming its cell, after something was skipped, <b>halts instead of typing blind</b>. A <code>goto</code> re-establishes it, and so does a step that names its own cell.</p>
   </div>
 
-  <p><b>Still to do:</b> wire the executor to the "Run it" button in <code>shishya_app.py</code>, which currently says the executor is not built. And run <code>--run</code> against a live Calc to confirm the actions land, which has not yet been done.</p>
+  <h3>Verification reads the cell</h3>
+  <p>It used to search the accessibility tree for the typed text, which answers a question nobody asked. "Yes" appearing somewhere on screen — in a save dialog's button, say — is not evidence that "Yes" reached I2. A typed value is now read back out of the cell it was typed into, through the Table interface, and compared.</p>
+
+  <div class="box b-good">
+    <span class="lbl">Measured on live Calc — the complete run, 23 Aug 26</span>
+    <p><b>All 8 substantive steps performed and verified, 9 noise steps skipped, 34 seconds.</b> I1 read back <code>Exam Eligible</code>, I2 <code>Yes</code>, I4 <code>No – below 65%</code>, I9 <code>Principal – medical certificate</code> — each read from its exact cell over the Table interface, never assumed. The biggest unproven claim in this project is no longer unproven.</p>
+    <p>An earlier attempt halted on I4 because <b>autocorrect rewrites a spaced hyphen as an en dash</b>. The same rewrite happened to the person who taught the lesson, so verification now compares the autocorrect-folded forms — demanding the raw characters back would fail every lesson taught by a human hand.</p>
+  </div>
+
+  <h3>How typing actually lands</h3>
+  <ul>
+    <li><b>Click first, then type.</b> WM-active and widget-focus are different things: Calc reopens with whatever bar it last showed, and a lingering Find bar holds focus and silently eats every keystroke. The executor clicks just inside the grid's own accessibility rectangle before any key is sent.</li>
+    <li><b>The Name Box is nameless</b> on this LibreOffice build, so when it cannot be found the executor walks: Ctrl+Home to A1, then arrow keys — I4 is eight Rights and three Downs. Refused beyond 60 columns or 200 rows, where one lost keystroke would land everything one cell off.</li>
+    <li><b>The grid is never walked.</b> A blank sheet reports 2,147,483,647 children; anything that big is skipped by every name search and its cells reached by row and column instead.</li>
+  </ul>
+
+  <h3>A goto is verifiable now</h3>
+  <p>It used to report "not verifiable, assumed", which was honest and useless. The sheet can be asked which of its cells has focus — through the <b>Collection</b> interface, in one call, without walking a table that reports two billion children. So <code>goto I1</code> now answers <i>"the cursor is in I1"</i>, and arriving in the wrong cell is caught there rather than three steps later when a typed value fails to read back from somewhere it was never written.</p>
+  <p>These lookups fail intermittently in a long-lived process while Calc sits plainly on screen with the cursor in the right place. That is treated as an unknown, never as a failure: a <code>goto</code> that cannot be confirmed says <i>"arrived, but the sheet would not say where — unverified"</i> and the run continues, because the step after it reads its cell back and does not depend on this at all. Focusing the grid falls back to the window's own geometry for the same reason — a flaky tree query once ended a lesson four steps from the end for no reason a person watching could see.</p>
+
+  <h3>Ask-when-unsure</h3>
+  <p>A step the executor does not understand no longer just gets skipped — the run pauses and the question appears in the panel's Lessons pane, with a box and two buttons: <b>Tell it</b> and <b>Skip it</b>. The answer travels back as a file in the lesson's own folder (the shared mount is the one channel that crosses the boundary), is re-read by the same <code>understand()</code> that reads every step, and — this is the point — <b>is folded back into procedure.json</b>, so the next run never asks that question again. No answer for three minutes and the step is skipped with that reason; an unattended run cannot hang.</p>
+  <p><b>Only while somebody is watching, and at most three times.</b> The panel's Run button asks; a scheduled or headless run does not. The recorded lesson has nine steps it cannot perform, and asking about every one turned a 34-second run into half an hour of a panel waiting on a person who had left. After the third question it goes back to skipping, which is what it did before and is never wrong.</p>
+  <p>Verified live: a lesson with "Frobnicate the flux register" in the middle asked, was told <i>"Type 'taught mid-run' into cell B2"</i>, performed it, verified B2, and finished. The ledger reads like a conversation:</p>
+<pre><code>info   lesson.ask     step 2 · Frobnicate the flux register
+allow  lesson.answer  step 2 · Type 'taught mid-run' into cell B2
+allow  lesson.taught  step 2 · Type 'taught mid-run' into cell B2</code></pre>
+
+  <h3>Running one from the panel</h3>
+  <p>Lessons are listed, planned and run from the control panel rather than from inside the sandbox, for the same reason everything else is: the path never touches the display, so it survives the evenings when clicking inside the clone does not.</p>
+  <div class="tw"><table>
+    <thead><tr><th>Route</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET /api/lessons</code></td><td>Every procedure learned, newest first. Read from the host's own copy of <code>shared/</code>, so it still answers when the sandbox is down.</td></tr>
+      <tr><td><code>POST /api/lesson/plan</code></td><td>What it would do. Cheap — no display work.</td></tr>
+      <tr><td><code>POST /api/lesson/run</code></td><td>Starts a run on a background thread. Refuses when the plan can perform nothing at all.</td></tr>
+      <tr><td><code>GET /api/lesson/progress</code></td><td>Polled while it runs. A page reloaded mid-procedure picks the run back up.</td></tr>
+      <tr><td><code>POST /api/lesson/stop</code></td><td>Halts it. Two kills — the local <code>limactl shell</code> and the executor inside the sandbox — because whether terminating an ssh channel reaches the far side is not something to discover while the clone is typing.</td></tr>
+    </tbody>
+  </table></div>
+  <p>The lesson id names a directory that is interpolated into a shell command inside the sandbox, so it is checked against a character class <em>and</em> against the filesystem — the same rule as the app launcher: a choice from things that exist, never a path.</p>
+  <p><b>Every step goes into the ledger, and refusals go in as refusals.</b> <code>lesson.skip</code> and <code>lesson.halt</code> are both <code>deny</code>, kept under separate names because "I did not attempt this" and "I stopped the work" are different events and a log has to say which. In the panel a skip is quiet and a halt is inverted — inversion is the strongest signal this palette has, and nine inverted rows out of seventeen would make a healthy run look like a disaster.</p>
+
 </section>
 
 <!-- ══════════════════════════════════════════════ -->
@@ -418,9 +561,26 @@ python3 executor.py &lt;trace-dir&gt; --run   # actually do it</code></pre>
   <p>Browsing is a mode you switch on, written to the ledger when it changes, and the sandbox cannot grant it to itself — no sudo, and the rules live outside its reach. Tested: with browsing on, a connection to port 22 was still refused while the web worked.</p>
   <p><b>The claim was never that this can never reach the internet.</b> It is that it cannot unless you say so, and when you do it is in the log.</p>
 
+  <div class="box b-bad">
+    <span class="lbl">Read the state you assert, not one it resembles</span>
+    <p>Both LOCKED and BROWSING are <code>policy drop</code>. Testing only for the policy meant the panel reported LOCKED throughout a two-hour window when the web was open — see §16, the most serious defect this project has had. <code>egress_state()</code> now returns locked <b>only</b> when there is no web rule present, so the three states in the table above are three answers rather than two.</p>
+  </div>
+
+  <h3>Every deliverable says which it was</h3>
+  <p>A report is stamped with the machine's state at the moment its job started — <i>"Made by Shishya on this machine, with the sandbox's network locked — nothing could leave this computer while this was made. Model: gpt-oss:latest."</i></p>
+  <p><b>Recorded by the host, quoted by the runner.</b> The clone has no sudo and cannot ask nftables anything, so a report claiming its own network was locked would be the sandbox vouching for itself, which is worth nothing. When the state could not be checked it says so rather than guessing. The two hours above are precisely why: those files are indistinguishable from the ones made under lock, and always will be.</p>
+
+  <h3>Secrets are not mounted</h3>
+  <p>The security model of this project is the mount list, and this applies it to credentials. The store is <code>~/.shishya/secrets.json</code>, mode 0600, <b>outside the repository</b> — because <code>vm/lima.yaml</code> mounts the whole repo at <code>/opt/shishya</code>, so a secret in <code>var/</code> is one the clone can read. Tested rather than assumed: a canary written to <code>var/</code> was read back from inside the sandbox on the first attempt, and a <code>find /</code> across the sandbox for the real store returns nothing.</p>
+  <div class="box b-warn">
+    <span class="lbl">It is not encrypted, and does not say it is</span>
+    <p>Encryption needs a key; a key needs either a passphrase typed on every scheduled run, or storage beside the thing it protects — which protects nothing. Claiming "encrypted at rest" while doing the latter is the kind of statement this project exists not to make. What is true: the sandbox has no path to it, the permissions are 0600, and <b>the ledger records that <code>tally.password</code> was set, never what it was set to</b>. An audit trail holding credentials is a place to steal them from.</p>
+    <p><code>./demo.sh check</code> verifies both halves on every run — the permissions, and that no stored value has been copied into <code>shared/</code> by some well-meaning script. Planting a value there turns the check red.</p>
+  </div>
+
   <h3>The other three</h3>
   <ul>
-    <li><b>The mount list.</b> The only writable window is <code>shared/</code>. Everything else on the Mac does not exist from inside.</li>
+    <li><b>The mount list.</b> The only writable window is <code>shared/</code>. Everything else on the Mac does not exist from inside — and the panel's own file browser is held to the same line, resolving every requested path and refusing anything outside the folder it was given.</li>
     <li><b>No sudo.</b> The clone is unprivileged even within its own sandbox.</li>
     <li><b>Rollback.</b> APFS clone; 12 seconds; the environment survives and the clone's work does not.</li>
   </ul>
@@ -440,6 +600,28 @@ python3 executor.py &lt;trace-dir&gt; --run   # actually do it</code></pre>
   </ul>
   <p>Destructive controls could not be red either, so they are marked structurally: a heavier rule under <b>Roll back</b>, dashed under the reversible pair. A three-state appearance switch (light / dark / auto) sits in the header; auto is the absence of the attribute, which is what the stylesheet already keyed on.</p>
   <p>An earlier pass rendered the panel in Apple's language — SF Pro via <code>-apple-system</code>, translucent toolbar, system blue. It was replaced at the owner's request. If it is ever wanted back it is in commit <code>0128786</code>.</p>
+
+  <h3>The refinement pass — 23 Aug 26</h3>
+  <p>The language was right; the execution had drifted as the panel grew from five sections to eight. Nothing here changes what the panel says, only how well it says it.</p>
+  <div class="tw"><table>
+    <thead><tr><th>Change</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td><b>Grey tokens raised to measured contrast</b></td><td>The one that mattered. See the box below.</td></tr>
+      <tr><td><b>Sections are numbered</b> — <code>01</code>…<code>08</code>, by CSS counter</td><td>Eight sections in one scrolling column need an index. Numbered like this handbook's own sections, and it costs no markup.</td></tr>
+      <tr><td><b>The ledger has a time axis</b> and pinned column captions</td><td>An audit trail without times is a list; with them it is a record. Seconds, not minutes — three entries inside one minute is a story that <code>HH:MM</code> hides.</td></tr>
+      <tr><td><b>State readouts carry a square</b> — filled when the guard holds, hollow when it does not</td><td>A second channel besides the rule underneath, and the one that reads from across a demo table. Still no hue.</td></tr>
+      <tr><td><b>The clone's screen has viewfinder ticks</b></td><td>It is an instrument showing another machine, and the frame should say so.</td></tr>
+      <tr><td><b>Buttons share one height and press by a pixel</b></td><td>Opacity on <code>:active</code> reads as a rendering glitch; displacement reads as a mechanism.</td></tr>
+      <tr><td><b>Produced files are controls, not hyperlinks</b></td><td>Default link blue was the one hue that survived the palette being removed, and it sat directly under a job's own summary.</td></tr>
+      <tr><td><b>Selection inverts</b>; the empty ledger says what will appear there</td><td>The same move as every hover; and an empty panel should explain itself rather than look broken.</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="box b-bad">
+    <span class="lbl">Quiet is a contrast ratio, not a hope</span>
+    <p>Every section label, the ledger's captions, the header's small caps and the corner marks were drawn in <code>--ink-4</code>. Against the dark end of the light theme's gradient that measured <b>1.35:1</b>. Not subtle — invisible. <code>--ink-3</code> was 1.96:1.</p>
+    <p>They are now <b>3.54:1</b> and <b>4.60:1</b> at the worst point of the ground, dark theme likewise raised. The lesson generalises past this panel: a grey chosen by eye on the designer's screen is a grey nobody has measured, and "understated" is the word people reach for when they mean "cannot be read".</p>
+  </div>
 </section>
 
 <!-- ══════════════════════════════════════════════ -->
@@ -462,6 +644,34 @@ python3 executor.py &lt;trace-dir&gt; --run   # actually do it</code></pre>
       <tr><td>Reading .xlsx/.docx/.pptx/PDF</td><td>Native libraries, no LibreOffice needed.</td></tr>
       <tr><td>Working offline</td><td>Image cached, model local, panel has no external references but one font.</td></tr>
       <tr><td>Executor plan</td><td>8 of 17 steps performable on a real lesson; the 8 are the substantive ones.</td></tr>
+      <tr><td>Executor against live Calc</td><td><b>Complete.</b> 8 of 8 substantive steps performed and verified by reading each cell back; 9 noise steps skipped; 34 seconds.</td></tr>
+      <tr><td>Ask-when-unsure</td><td>Paused on an unknown step, took the answer from the panel, performed and verified it, and saved the new wording into the procedure — the re-run performed 3 of 3 without asking.</td></tr>
+      <tr><td>A job, end to end</td><td>"List every item low on stock by category" → program written, run, 149 items across 8 categories — matching the independently verified figures — delivered as a download.</td></tr>
+      <tr><td>A report, end to end</td><td>Two school files → class averages, the five-month trend, best and worst students, as report.html + PNGs, in under a minute — from the panel and from the Reports app on the desktop.</td></tr>
+      <tr><td>A question in Telugu or Hindi</td><td>Both now translate for the search, retrieve <code>attendance-policy.md</code> and the exam circular — the same two the English question finds — and reply in the language asked. <b>Not verified: whether the Telugu reads correctly.</b> See §15.</td></tr>
+      <tr><td>AutoCorrect off</td><td>Typed <code>No - below 65%</code>, the cell stores <code>No - below 65%</code>. The whole lesson now writes plain hyphens: I4 and I9 read back exactly what was taught.</td></tr>
+      <tr><td>Goto verification</td><td>The sheet is asked which cell has focus: <code>ctrl+Home</code> → <code>A1</code>, three rights and two downs → <code>D3</code>. Wired into the executor and confirmed on the real lesson.</td></tr>
+      <tr><td>Smallest model that works</td><td><b>deepseek-r1:8b</b> — 5.2 GB on disk, 7.2 GB resident — answered the verified low-stock question correctly in 59s. gpt-oss did it in 24s; llama2:7B could not write a runnable program at all. <code>vm/bench.py</code>, rerunnable.</td></tr>
+      <tr><td>Provenance on deliverables</td><td>Every report carries the host's record of the network state and the model used, written before the work started.</td></tr>
+      <tr><td>Approval, end to end</td><td>Clerk asked to void; bill unchanged. Clerk refused permission to approve their own request. Head approved; the app performed it once and the bill settled at ₹0.00; reopening performed nothing again; deciding twice refused.</td></tr>
+      <tr><td>Secrets stay out of the sandbox</td><td><code>cat ~/.shishya/secrets.json</code> and <code>find / -name secrets.json</code> from inside both return nothing. A canary in <code>var/</code> <em>was</em> readable — which is why the store is not there.</td></tr>
+      <tr><td>Secret values never logged</td><td>Set a 25-character password; <code>grep</code> for its value across the whole ledger returns 0. The name and length are recorded.</td></tr>
+      <tr><td>Version history of the material</td><td>Separate repository in <code>shared/</code>; a customer added showed as <code>+History Test,,0.00</code> in the diff, and a finished audit job left <code>after Shop audit</code> behind it automatically. The source repo stayed at 42 commits.</td></tr>
+      <tr><td>Datasets notice when they move</td><td>A recorded result reported <code>APP-3307.txt has changed</code> after one line was appended, and cleared when the file was restored.</td></tr>
+      <tr><td>Tasks outlive their alert</td><td>3 alerts raised 3 tasks; raising the same alerts again left the count at 3.</td></tr>
+      <tr><td>Taking a file back</td><td>Browsed Work → Bills, took a 2,107-byte invoice through the browser, logged <code>allow file.out</code>. <code>../../../etc/passwd</code> and <code>Bills/../../../..</code> both refused.</td></tr>
+      <tr><td>GST on a bill</td><td>₹318.87 of takings carries ₹48.64 of GST — 18% inside a tax-inclusive price, to the paisa. Invoices break tax out by rate.</td></tr>
+      <tr><td>Void and return arithmetic</td><td>Plain void, part-returned then voided, fully returned then voided: all three settle at ₹0.00 with stock back to its starting count.</td></tr>
+      <tr><td>Roles</td><td>clerk: may void = no, may roll back = no, may sell = yes. head: all yes. Enforced in the panel and again in the Billing app.</td></tr>
+      <tr><td>Backup</td><td>Books copied to Work/Backups with a readable summary; ₹318.87 takings and ₹1,965,420.13 of stock at cost recorded in plain text beside the CSVs.</td></tr>
+      <tr><td>Alerts</td><td>Ranked and capped at five: 149 products below reorder (₹158,827.78 to refill), never backed up, nothing billed today.</td></tr>
+      <tr><td>Billing, end to end</td><td>Three bills rung up over AT-SPI, ₹318.87 recorded, stock decremented on every line — Wine Glasses 17 → 14.</td></tr>
+      <tr><td>A run with nobody there</td><td>Scheduled 18:48, fired 18:51:16 as <code>actor=system</code>, produced audit.html and two charts, and stamped itself so it cannot fire twice in a day.</td></tr>
+      <tr><td>The AI reading the shop's books</td><td>"What did we sell today and which product made the most profit" → a program against <code>sales.csv</code>, matching the audit to the paisa.</td></tr>
+      <tr><td>Tally import XML</td><td>17,011-row export → 70 deduplicated supplier ledgers + 70 vouchers, ₹262,549,595.42 (two paise from the verified total, from per-voucher rounding), re-parsed: 0 unbalanced, names escaped, every party ledger created.</td></tr>
+      <tr><td>Running a lesson from the panel</td><td>Plan, run, live per-step progress, stop. Every step in the ledger; refusals as <code>deny</code>.</td></tr>
+      <tr><td>Cell-level verification</td><td>Reads the named cell back through the Table interface, in about a millisecond, and compares it to what the lesson said.</td></tr>
+      <tr><td>Lesson id cannot escape</td><td><code>../../../etc; touch /tmp/pwned</code> refused by the character class before it reached a shell.</td></tr>
     </tbody>
   </table></div>
 </section>
@@ -474,18 +684,25 @@ python3 executor.py &lt;trace-dir&gt; --run   # actually do it</code></pre>
     <ul>
       <li><b>Asking it to count or filter across rows in its head.</b> It named two of three students below an attendance threshold, twice out of three runs, and once invented a percentage. Route to code — the shortcut does this automatically, but phrasing that dodges the keywords will slip through.</li>
       <li><b>Transcribing an existing table into a spreadsheet.</b> Asked to copy a mark sheet it filled all 48 numeric cells with the word "maths" — a repetition loop under schema-constrained generation. Building a table <i>from prose</i> is fine; copying one is not.</li>
-      <li><b>Executor <code>--run</code> against live Calc.</b> The plan is verified; the actions have not been performed end to end.</li>
+      <li><b>A lesson recorded against anything but Calc.</b> Everything below the plan — <code>goto</code>, the cell read-back — is spreadsheet-shaped. A procedure in Writer plans fine and performs nothing.</li>
+      <li><b>Importing the Tally XML into a real company.</b> The file passes every check that can run here, but Tally itself has never accepted it — that needs a Windows machine. Test company first; Import Data cannot be undone.</li>
     </ul>
   </div>
 
   <h3>Rough edges to know about</h3>
   <ul>
+    <li><b>Scrolling used to blank the screen.</b> Openbox ships four virtual desktops with the mouse wheel over the desktop bound to switching between them, so a scroll that missed a window replaced everything with an empty workspace — indistinguishable, through a video stream, from every app crashing at once. Now one desktop, checked by <code>./demo.sh check</code>.</li>
     <li><b>Clicking inside the sandbox is unreliable.</b> Stale noVNC connections swallow button releases, so windows raise and tooltips show while nothing activates. Drive from the panel; <b>Fix input</b> rebuilds the display in five seconds without closing apps.</li>
     <li><b>The VM stops when the Mac sleeps.</b> Every time. <code>./demo.sh</code> recovers.</li>
     <li><b>Ollama is an app and quits.</b> <code>demo.sh</code> restarts it.</li>
     <li><b>Filenames uploaded before 21 August are mangled</b> (<code>01_20Retail_20Inventory.xlsx</code> was <code>01 Retail Inventory.xlsx</code>). The encoding bug is fixed; old files were never renamed.</li>
+    <li><b>The Telugu answer may be saying something different from the English one.</b> Asked the same question, the English reply opens "does <b>not</b> automatically qualify" and the Telugu opens "అవును" — yes. Both then give the 65–75% band and the 15-day certificate rule, so the substance is there and the emphasis is not the same. Nobody on this project reads Telugu, and a policy answer that leads with the wrong word is exactly the kind of error that matters. <b>Do not demonstrate this until a Telugu speaker has read it.</b></li>
+    <li><b>16 GB is the floor, not 8.</b> Measured, not guessed: the smallest model that answers correctly needs 7.2 GB resident, on top of the sandbox's own allocation and macOS. A 4 GB VM plus that model plus the system is about 16 GB. <code>./demo.sh</code> does not check this; <code>vm/bench.py</code> measures it.</li>
     <li><b>A cloud model is installed</b> — <code>deepseek-v3.1:671b-cloud</code>. Filtered out of the Models picker so it cannot be chosen by accident, but it exists. Selecting it would destroy the entire sovereignty claim.</li>
     <li><b>Qt WebEngine needed AppArmor's namespace restriction relaxed</b> inside the VM for the browser to render. A real control loosened, defensible only because the VM is the boundary.</li>
+    <li><b>An Xvfb can come up with keyboard injection dead.</b> Mouse fine, queries fine, every typed key silently swallowed, for every app. <code>./demo.sh check</code> now types a probe and reads it back; the cure is the full display-stack restart in <code>./demo.sh</code>.</li>
+    <li><b>Raising a window is not focusing it.</b> Anything that types must click its target first — the executor does, and the keyboard check does. A probe that only ran <code>windowactivate</code> reported a failure that was not there.</li>
+    <li><b>A running process keeps old code until it is restarted</b> — the panel and the desktop shell both. Adding an app to the launcher does not put it in the menu; the shell that draws the menu has to be restarted to read the file. This cost two rounds of "where is my app" in one afternoon. <code>./demo.sh check</code> now compares each process's start time against its own source and says so; <code>./demo.sh</code> restarts both.</li>
   </ul>
 </section>
 
@@ -501,6 +718,28 @@ python3 executor.py &lt;trace-dir&gt; --run   # actually do it</code></pre>
       <dt>Cause</dt><dd>The terminal and theme blocks were inserted by anchoring on <code>refresh();</code>, and <b>Python's <code>str.replace</code> replaces every occurrence unless told otherwise</b>. That string appears three times, so the blocks landed inside <code>send()</code> and inside <code>guard()</code>'s finally clause as well, each time leaving an <code>if</code> followed by a <code>const</code>.</dd>
       <dt>Two wrong turns</dt><dd>A bracket counter reported an unclosed parenthesis — it did not know a regex literal from an expression. And the console kept showing the same error after the fix; old messages persist. It was only confirmed by importing the module dynamically.</dd>
       <dt>Lesson</dt><dd class="lesson">A syntax error is invisible from the outside — every machine-side diagnostic reports perfect health. <b>Check the browser console first when a page misbehaves</b>, and always pass <code>count=1</code>.</dd>
+    </dl>
+  </div>
+
+  <div class="fail">
+    <h4>The sandbox streamed video of a picture nobody had open</h4>
+    <p class="sym">Symptom: none. Everything worked. The machine simply never went idle — a bare desktop with no viewer attached, no job running and nothing on screen sat at a third of a core for as long as it was up.</p>
+    <dl>
+      <dt>Cause</dt><dd>The animated wallpaper. It repaints all 1440&times;900 on a timer, and over VNC a full-screen repaint is a full frame for x11vnc to encode and ship. Nothing connected the drawing to whether anyone could see it, so the desktop generated a video stream into a socket with no reader. Measured at 18.8% of a core in Xvfb plus 13.0% in the shell, permanently.</dd>
+      <dt>Two more, found while measuring</dt><dd>The frame-rate setting was never applied — <code>set_live()</code> reset <code>self.fps</code> to 0 on every call, after <code>relabel()</code> had just set it, so a wallpaper configured for 4&nbsp;fps ran at the built-in 14. And the taskbar tore down and rebuilt every button every two seconds whether or not a window had opened — a 1440&times;48 repaint forever, four <code>xdotool</code> processes with it, and a churn of the AT-SPI tree the executor grounds on.</dd>
+      <dt>Fix</dt><dd>The desktop reads noVNC's own socket out of <code>/proc/net/tcp</code> and stops drawing when the last viewer goes. Three separate gates — a viewer is attached, the model is not thinking, a live wallpaper is chosen — are now <i>all</i> required rather than fighting each other for who spoke last. The taskbar rebuilds only when the window list changes.</dd>
+      <dt>Lesson</dt><dd class="lesson">Work with no observer is still work. On a machine whose screen is watched through a video stream, <b>anything that draws on a timer is a permanent bitrate floor</b> — and a settings value that is silently ignored will never show up as a bug, only as a cost. Prove idleness with pixels: two screenshots seconds apart must be byte-identical.</dd>
+    </dl>
+  </div>
+
+  <div class="fail">
+    <h4>The VNC server was told not to use the extension that makes it fast</h4>
+    <p class="sym">Symptom: none visible. x11vnc ran with <code>-noxdamage</code> for months.</p>
+    <dl>
+      <dt>Cause</dt><dd>That flag turns off XDAMAGE, the X extension that reports which rectangles changed, and leaves x11vnc scanning the whole framebuffer on a timer looking for differences itself. <code>xdpyinfo</code> lists DAMAGE on this Xvfb; it works. The flag was defensive and cost real work on every frame.</dd>
+      <dt>Alongside it</dt><dd>x11vnc does a reverse DNS lookup on every client that connects. With the egress lock on, that query does not fail — it waits for the resolver to time out, and the screen stays blank for the whole of it. The same failure mode as the <code>sudo</code> hostname lookup already dealt with in <code>provision.sh</code>: the security feature strangling the thing that reports on it. <code>-nolookup</code>.</dd>
+      <dt>Why it took months</dt><dd>The display stack was defined inline in <code>provision.sh</code>, which runs exactly once per machine. Changing one flag on one service meant rebuilding the VM — an hour, to test a guess. It is now <code>vm/display.sh</code>, idempotent, re-runnable against a machine that is up, and wired to the panel's <b>Rebuild display</b> button.</dd>
+      <dt>Lesson</dt><dd class="lesson">A defensive flag with no measurement behind it is a permanent tax. And <b>configuration you cannot change without a rebuild will not get changed</b> — the cost of trying is what decides whether anyone ever tries.</dd>
     </dl>
   </div>
 
@@ -569,6 +808,120 @@ python3 executor.py &lt;trace-dir&gt; --run   # actually do it</code></pre>
   </div>
 
   <div class="fail">
+    <h4>A search that would have finished in sixteen days</h4>
+    <p class="sym">Symptom: with Calc open, every lookup hung. Not slow — nothing ever came back.</p>
+    <dl>
+      <dt>Cause</dt><dd>A spreadsheet reports its <i>theoretical</i> size as its child count. Calc says <b>2,147,483,647</b>, which is INT32_MAX and not a number of cells anyone has. <code>locate.py</code> walked <code>range(childCount)</code> over AT-SPI at roughly 1,500 nodes a second, so descending into one sheet takes about sixteen days.</dd>
+      <dt>Fix</dt><dd>A node claiming more children than any real interface has is treated as opaque. 16 days → 1.2 seconds. Nothing findable by name lives in the grid anyway — cells are reached by row and column, not by walking, which is also what made verification possible.</dd>
+      <dt>Lesson</dt><dd class="lesson">A hang and a slow function look identical from outside, and both look like a crash. <b>Ask a tree how big it says it is before walking it</b>, and disbelieve the answer.</dd>
+    </dl>
+  </div>
+
+  <div class="fail">
+    <h4>The Name Box has no name</h4>
+    <p class="sym">Symptom: <code>goto</code> reported "no Name Box — is a spreadsheet open?" with a spreadsheet open.</p>
+    <dl>
+      <dt>Cause</dt><dd>LibreOffice exposes the Name Box as an <b>unnamed panel</b> with no text interface. <code>find("Name Box")</code> could never have matched it, in any build. The design note said it was "one control, always present, always in the same place" — right about the screen, wrong about the accessibility tree, and never tested because the search hung before it could return nothing.</dd>
+      <dt>Fix</dt><dd>Reached through the toolbar that owns it: <code>Formula Tool Bar</code> is named, and the Name Box is its first panel. Extents are read fresh each time, so moving the window does not break it — which hard-coded coordinates would.</dd>
+      <dt>Lesson</dt><dd class="lesson">A control being obvious on screen says nothing about whether it is reachable. <b>Two bugs in the same path hide each other:</b> the hang concealed the missing name for as long as it existed.</dd>
+    </dl>
+  </div>
+
+  <div class="fail">
+    <h4>Autocorrect quietly changed the data</h4>
+    <p class="sym">Symptom: the run halted on a cell that looked completely right.</p>
+    <dl>
+      <dt>Cause</dt><dd>The lesson said <code>No - below 65%</code>. The cell held <code>No – below 65%</code>. LibreOffice replaces a hyphen with an en dash as you type, so what was stored was not what was taught, by one invisible character.</dd>
+      <dt>Why this is the good news</dt><dd>The old check searched the screen for the text and would have reported the same failure with no idea why. Reading the cell back said exactly what was in it, so a one-character difference was legible instead of mysterious.</dd>
+      <dt>Lesson</dt><dd class="lesson"><b>The application between you and the file is an editor, not a pipe.</b> Verify by reading back what was stored, never by trusting what was sent — and quote both when they differ.</dd>
+    </dl>
+  </div>
+
+  <div class="fail">
+    <h4>Refusing correctly, and doing nothing at all</h4>
+    <p class="sym">Symptom: the plan said 8 of 17 performable. The run performed 0, and every part of it was working as designed.</p>
+    <dl>
+      <dt>Cause</dt><dd>The executor halted at the first step it did not recognise. Step 1 of the only real recorded lesson is "Navigate to the main panel" — recorder noise. It refused at step 1 and never reached the eight substantive steps behind it.</dd>
+      <dt>Lesson</dt><dd class="lesson">"Stop rather than guess" was the right principle applied at the wrong granularity. <b>Not attempting a step and abandoning the job are different refusals</b>, and collapsing them into one made a correct design useless. The distinction cost nothing to add and is the difference between the feature working and not.</dd>
+    </dl>
+  </div>
+
+  <div class="fail">
+    <h4>The wrong model answered for half an hour</h4>
+    <p class="sym">Symptom: "I couldn't write a program for that. Try narrowing it down" — after 30 minutes of thinking.</p>
+    <dl>
+      <dt>Cause</dt><dd>Four faults stacked. The chat app never passed a job name, so every call fell back to a 5GB reasoning model while the Models screen showed the 14GB one the owner picked. The context window was a fixed 8,192 while the code path asked for 6,144 tokens of answer, so a 2,700-token file listing left the prompt truncated. The empty-answer retry then <b>doubled</b> the budget inside the same window, making the room for the prompt negative. Both attempts ran to completion: a reasoning model thinking at length, twice, about a question it could not see.</dd>
+      <dt>Lesson</dt><dd class="lesson">A fallback is a decision someone will make by accident — make it the same decision the owner made on purpose. And num_ctx must be sized from the prompt plus the budget, per call, or the retry that "adds room" is taking it away.</dd>
+    </dl>
+  </div>
+
+  <div class="fail">
+    <h4>Typing did nothing, for three different reasons in one afternoon</h4>
+    <p class="sym">Symptom: the executor types, the cell stays empty. Blamed, in order: VNC staleness, AT-SPI, LibreOffice, and Xvfb — one of those was even right once.</p>
+    <dl>
+      <dt>Causes, all real</dt><dd>(1) An openbox window menu nobody noticed was open, holding a keyboard grab that ate every key on the display. (2) An Xvfb instance that came up with XTEST keyboard injection dead system-wide — cured only by restarting the display stack. (3) Calc's Find bar, restored from the profile at launch, holding <i>widget</i> focus while the window was active — keys arrived at the window and landed in the search box.</dd>
+      <dt>What identified each</dt><dd>A screenshot (the menu was simply visible in it); typing into <code>cat</code> in an xterm and reading the file (empty = X-level, full = app-level); and a single test click into the grid followed by one key, which put an "a" in C5 and ended the argument.</dd>
+      <dt>Lesson</dt><dd class="lesson">When input dies, do not theorise — <b>screenshot first</b>, then type into <code>cat</code> to split X-level from app-level, then click before you type. GTK focuses on press; a window can be active while its grid has no focus at all.</dd>
+    </dl>
+  </div>
+
+  <div class="fail">
+    <h4>The repair laundered a crash into a deliverable</h4>
+    <p class="sym">Symptom: attempt one died with ZeroDivisionError; attempt two delivered a tidy ranked table where every margin was exactly 100%.</p>
+    <dl>
+      <dt>Cause</dt><dd>Shown its own traceback, the model "fixed" the division by making the cost vanish — turning a loud failure into confident nonsense with real product names on it, the kind of table that gets screenshotted into a board pack. A separate job invented "placeholder" data outright and said so in its own summary.</dd>
+      <dt>Lesson</dt><dd class="lesson">A retry may only be accepted if it produces <b>more</b> than the attempt it replaces, and a summary confessing dummy or invented data fails the job. Confession in, deliverable out.</dd>
+    </dl>
+  </div>
+
+  <div class="fail">
+    <h4>The panel read LOCKED for two hours while the sandbox could reach GitHub</h4>
+    <p class="sym">Symptom: none, until something tested it. The header said <code>EGRESS · LOCKED</code>, nftables agreed, and <code>curl https://github.com</code> from inside the sandbox returned <b>200</b>.</p>
+    <dl>
+      <dt>Cause</dt><dd><code>egress_state()</code> decided the answer by testing for <code>policy drop</code> in the ruleset. <b>Browsing mode is also policy drop</b> — with DNS and 80/443 punched through it. The two states are indistinguishable by that test, so the moment browsing was switched on for an apt install, the indicator went on reporting LOCKED and never stopped.</dd>
+      <dt>How long</dt><dd>Browsing was granted at 16:14:45 and left on. Every deliverable made in the following two hours was produced on a machine that could reach the internet, and not one of them recorded that.</dd>
+      <dt>Lesson</dt><dd class="lesson">This is the project's whole claim, and it was wrong in the safest-looking way: an indicator that <i>was</i> measuring something, just not the thing it named. <b>An indicator must test for the state it asserts, not for a condition that state happens to share with another.</b> Locked now means the model and nothing else; browsing reports as browsing, in both readouts. Found by <code>./demo.sh rehearse</code> on its first run, which is the entire argument for that command existing.</dd>
+    </dl>
+  </div>
+
+  <div class="fail">
+    <h4>A setting that was written, accepted, and silently discarded</h4>
+    <p class="sym">Symptom: AutoCorrect kept turning a typed hyphen into an en dash after being switched off. The keys were in the profile — <code>grep</code> found them — and LibreOffice ignored them.</p>
+    <dl>
+      <dt>Cause</dt><dd>The property name was guessed. The real one is <code>ChangeDash</code>, not <code>ReplaceDashes</code>; the path <code>/org.openoffice.Office.Common/AutoCorrect</code> had been right all along. LibreOffice validates the profile against its schema and <b>drops items for properties that do not exist</b>, without complaint, so the file looked correct right up until the moment it was reloaded.</dd>
+      <dt>What found it</dt><dd>Grepping <code>share/registry/main.xcd</code> — the schema ships with the application and names every property it will accept. The answer was on disk the entire time.</dd>
+      <dt>Lesson</dt><dd class="lesson">When a configuration is written and ignored, <b>read the schema rather than guessing again</b>. A setting that is accepted and discarded looks exactly like a setting that is applied — and a second guess is no more likely than the first.</dd>
+    </dl>
+  </div>
+
+  <div class="fail">
+    <h4>A whole layer of the interface was invisible and nobody noticed</h4>
+    <p class="sym">Symptom: none. The panel looked clean, and had looked clean for weeks.</p>
+    <dl>
+      <dt>Cause</dt><dd>Every section label, the ledger's column captions and both corner marks were <code>--ink-4</code> on the grey ground — <b>1.35:1</b> in the light theme, against 4.5:1 for text and 3:1 for large text. They were being drawn and could not be read. It surfaced only when the theme was switched to light for a screenshot and the words were simply not there.</dd>
+      <dt>Lesson</dt><dd class="lesson"><b>Measure the greys, do not choose them.</b> A restrained palette hides this failure better than a loud one: nothing looks wrong, because the thing that is wrong is not visible. Check both themes at the worst point of any gradient, and prefer the arithmetic to the eye.</dd>
+    </dl>
+  </div>
+
+  <div class="fail">
+    <h4>A window with nothing in it, and no error anywhere</h4>
+    <p class="sym">Symptom: the Billing app opened as a blank white rectangle. Empty log, clean exit code, process alive, accessibility tree reporting a frame with zero children.</p>
+    <dl>
+      <dt>Cause</dt><dd>The class is a <code>Gtk.Window</code>, and it defined a method called <code>add()</code> — for adding a product to the bill. <code>Gtk.Container</code> already defines <code>add()</code>. So <code>self.add(root)</code> in the constructor called the billing method with the root box as a product id, found no such product, and returned. The window was never given its contents, and nothing anywhere failed.</dd>
+      <dt>Lesson</dt><dd class="lesson"><b>Never name a method after the toolkit's.</b> Subclassing hands you every name the parent owns, and shadowing one fails silently by doing something perfectly reasonable with the wrong argument. When a window is blank and the log is clean, count the accessible children before theorising.</dd>
+    </dl>
+  </div>
+
+  <div class="fail">
+    <h4>The search results could not be pressed</h4>
+    <p class="sym">Symptom: the counter looked right, searched correctly, and could not be driven — every attempt to add a product silently did nothing.</p>
+    <dl>
+      <dt>Cause</dt><dd>Results were <code>GtkListBoxRow</code>s. A row publishes no action to AT-SPI, so there is nothing to invoke: a person can click it and nothing else can. In a project where every app must be drivable from the panel and teachable by demonstration, that is the same as not working.</dd>
+      <dt>Lesson</dt><dd class="lesson">If a control cannot be operated through the accessibility layer, it does not exist to this system. A flat <code>Gtk.Button</code> looks identical to a row and can be pressed — <b>build for the tree, not only for the eye</b>.</dd>
+    </dl>
+  </div>
+
+  <div class="fail">
     <h4>Smaller ones worth not repeating</h4>
     <ul>
       <li><code>{{.Dir}}</code> in Lima is the <i>instance</i> directory, not the config file's — both mounts pointed at the wrong place.</li>
@@ -579,9 +932,19 @@ python3 executor.py &lt;trace-dir&gt; --run   # actually do it</code></pre>
       <li>The upload handler never decoded the percent-encoded filename, mangling every file with a space in its name.</li>
       <li>Backgrounding through <code>limactl shell</code> never detaches cleanly; use a systemd unit or <code>setsid</code> with stdin closed.</li>
       <li>A range-replacement between two markers deleted a function; Python still parsed and the app caught the error per click.</li>
-      <li>The ledger rendered 94 entries into zero height — a flex child with no <code>min-height</code>. It was rendering into nothing, which looks identical to not rendering.</li>
+      <li>The ledger rendered 94 entries into zero height — a flex child with no <code>min-height</code>. It was rendering into nothing, which looks identical to not rendering. <b>It then happened again</b>, in the same stylesheet, to the pane that shows a lesson plan: seventeen rows into twenty-six pixels. Fixing one instance of a trap does not fix the trap.</li>
       <li>A GTK stylesheet is a <b>bytes</b> literal; an em dash in a comment breaks the whole shell.</li>
       <li>Binding only to <code>127.0.0.1</code> means <code>localhost</code> fails, because macOS resolves it to <code>::1</code> first.</li>
+      <li>A blank Calc sheet reports <code>INT_MAX</code> accessible children — walking it is why finding the Name Box used to take forever. Grids are skipped by name walks and read by row and column.</li>
+      <li>A notes reader capped at two files silently never read the third notes file anyone wrote. Budget by size, never by count.</li>
+      <li>A prompt-size budget that dropped whole files dropped the largest workbook — the only one that could answer — while keeping four small files nobody asked about. Trim detail, never drop the path.</li>
+      <li><code>pkill -f</code> with a literal pattern killed the probe that contained the pattern in its own command line. Build the match string at runtime.</li>
+      <li><code>ROLES</code> was already the job→model map in <code>common.py</code>; a second <code>ROLES</code> for clerk/head shadowed it and handed <code>set_role</code> a <code>Path</code>. Two different things cannot share a name in one module, and the one defined later wins silently.</li>
+      <li>A test that built three bill numbers from the clock in the same second gave all three the same number, and a void reported the wrong bill as already voided. The bug was in the test; the code was right. Timestamps are not identifiers.</li>
+      <li>Openbox reads its desktop count at startup but honours one already set on the root window, so restarting the window manager alone does not reduce four desktops to one while Xvfb is still up. <code>xdotool set_num_desktops</code> changes the live session without touching a window.</li>
+      <li>An app added to <code>desktop.py</code> is not in the menu until the desktop shell restarts. Twice: Reports, then Billing. The file was right both times, which is exactly why it was confusing — the source and the screen disagreed and nothing reported it.</li>
+      <li>macOS <code>ps</code> has no <code>etimes</code>, so a process-age check written for Linux prints the keyword list and compares an empty string. The host half of that check is Python for this reason.</li>
+      <li>The recorded lesson types the value into a cell a <i>goto</i> selected, so the type step carries no cell name of its own — the executor fills it in from the goto, or the retry would overwrite whatever Return moved to.</li>
     </ul>
   </div>
 </section>
@@ -591,7 +954,9 @@ python3 executor.py &lt;trace-dir&gt; --run   # actually do it</code></pre>
   <h2><span class="num">17</span>Running it</h2>
 <pre><code>cd ~/Desktop/--/Projects/shishya
 ./demo.sh          # full reset, ~30s, ends with the checks
-./demo.sh check    # instant, changes nothing</code></pre>
+./demo.sh check    # instant, changes nothing
+./demo.sh rehearse # every claim you are about to make, exercised</code></pre>
+  <p><code>check</code> proves the machine is healthy. <b><code>rehearse</code> proves it can still do the things you are about to stand up and say it does</b> — a different question, and the one that matters ten minutes before a call. It curls out of the sandbox and demands a failure, asks for sudo and demands a refusal, lists <code>/Users</code> and demands nothing, plans a lesson, runs the audit, and tries to walk the download endpoint out of its own folder. On its first run it caught the egress indicator lying (§16).</p>
   <p>Then open <b><code>http://localhost:8200</code></b>.</p>
 
   <h3>What red means</h3>
@@ -602,6 +967,10 @@ python3 executor.py &lt;trace-dir&gt; --run   # actually do it</code></pre>
       <tr><td><code>2 x11vnc</code> / <code>4 websockify</code></td><td><b>This is what kills input.</b> <code>./demo.sh</code>.</td></tr>
       <tr><td><code>egress is False</code></td><td>A restart dropped the nftables rules. <code>./demo.sh</code> re-locks.</td></tr>
       <tr><td><code>model reachable</code> fails</td><td>Ollama quit. <code>./demo.sh</code> restarts it.</td></tr>
+      <tr><td><code>typed keys are not arriving</code></td><td>The Xvfb keyboard is dead — lessons and jobs that type will do nothing. <code>./demo.sh</code> rebuilds the display.</td></tr>
+      <tr><td><code>N desktops — scrolling will switch workspace</code></td><td>A rollback restored a disk from before the one-desktop fix. <code>./demo.sh</code>, or run <code>vm/one-desktop.py</code> directly — it does not disturb open windows.</td></tr>
+      <tr><td><code>the desktop is older than desktop.py</code></td><td>The launcher is drawing a menu from code that has since changed — a newly added app will not be in it. <code>./demo.sh</code>, or restart <code>shishya-desktop</code>.</td></tr>
+      <tr><td><code>model for the code job … not in ollama</code></td><td>The roles file names a model that is not installed; code answers would fall back silently. Install it or repoint the Models app.</td></tr>
     </tbody>
   </table></div>
 
@@ -622,6 +991,7 @@ python3 executor.py &lt;trace-dir&gt; --run   # actually do it</code></pre>
     <li><b>Ask for something counted</b> — it writes a program and shows it. Say plainly that it is unreliable at arithmetic by eye, which is exactly why it writes code.</li>
     <li><b>Run Findings.</b> The duplicate-supplier result is the strongest thing this project does.</li>
     <li><b>Ask it to make a document</b> and open the file.</li>
+    <li><b>Teach it something, then press Plan.</b> The plan is the honest part: it says how much of what you showed it it can actually do, before it does any of it. Then Run, and watch the steps land one at a time.</li>
     <li><b>Prove the network claim.</b> Point at the egress readout, then curl from inside the sandbox and watch it return nothing while the model keeps answering.</li>
     <li><b>Open the ledger</b> and point at the inverted refusal line.</li>
     <li><b>Roll back</b> and watch the last ten minutes cease to exist.</li>
@@ -636,13 +1006,39 @@ python3 executor.py &lt;trace-dir&gt; --run   # actually do it</code></pre>
 <!-- ══════════════════════════════════════════════ -->
 <section id="next">
   <h2><span class="num">19</span>What to build next</h2>
-  <ol>
-    <li><b>Finish the executor.</b> Wire it to the Run button in <code>shishya_app.py</code>, and run <code>--run</code> against live Calc. The plan is verified; the doing is not.</li>
-    <li><b>Ask-when-unsure.</b> Detect low confidence, pause, ask, fold the answer back into the procedure. This is what makes "apprentice" true rather than a metaphor, and it turns the one-demonstration weakness into the pitch.</li>
-    <li><b>Fix the input path properly.</b> Everything is routed around it; the root cause in websockify or x11vnc is still unknown.</li>
-    <li><b>Deduplicate supplier names.</b> Suggested by the best finding the tool has produced — offer to merge what it finds.</li>
-    <li><b>Cheaper hardware.</b> Currently wants 16 GB+. The Models screen is the honest answer — pick a small model where a small one will do — but it has not been tested on a small one.</li>
-  </ol>
+  <p>Ordered by what a judge finds first, not by what is most interesting to build. The two at the top need a person and a Windows machine; nothing in this repository can close them.</p>
+
+  <div class="tw"><table>
+    <thead><tr><th>Week</th><th>Do this</th><th>Done when</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>This week</b><br><span class="tag">blocking</span></td>
+        <td><b>One real user.</b> One pharmacist or one shopkeeper, one afternoon, ringing up their own bills on the Billing app. Every bill so far was rung up by a script.<br>
+            <b>One real Tally import</b> into a test company on a Windows machine.</td>
+        <td>You can say a sentence beginning "when we sat with…" and a second beginning "the vouchers imported clean."</td>
+      </tr>
+      <tr>
+        <td><b>Next week</b><br><span class="tag">demo</span></td>
+        <td>Rehearse on the machine you will present from, with <code>./demo.sh rehearse</code> before every run. Record a backup video of the executor performing the lesson.</td>
+        <td>Three consecutive clean rehearsals, and a recording you would be content to fall back on.</td>
+      </tr>
+      <tr>
+        <td><b>The week after</b><br><span class="tag">reach</span></td>
+        <td>Telugu and Hindi: the answering prompt now follows the question's language and retrieval translates before searching (§08). <b>What is left is judging the answers</b> — a Telugu speaker reading them, which nobody here can do. Then roles: the clerk sees Reports and the Inbox, the head sees the ledger and the undo button.</td>
+        <td>A question asked in Telugu is answered in Telugu, from the same locked machine.</td>
+      </tr>
+      <tr>
+        <td><b>Whenever</b><br><span class="tag">cleanup</span></td>
+        <td>Verify <code>press</code> as well as <code>goto</code>. Get under 16 GB with a 3B-class model. Deduplicate supplier names on request rather than only reporting them.</td>
+        <td>Nothing here is load-bearing for a demonstration.</td>
+      </tr>
+    </tbody>
+  </table></div>
+
+  <div class="box b-warn">
+    <span class="lbl">The thing that is not a feature</span>
+    <p>Fifteen apps, three job runners, six chat actions, six Findings checks. <b>The shortage is not tools, it is users.</b> Tool sixteen moves you from thirty-two buttons to thirty-three; one afternoon with a real shopkeeper moves you from "impressive project" to "validated product", which is a different category of thing. It is also the only item on this list that needs no code.</p>
+  </div>
 </section>
 
 <!-- ══════════════════════════════════════════════ -->
@@ -655,21 +1051,40 @@ python3 executor.py &lt;trace-dir&gt; --run   # actually do it</code></pre>
       <tr><th>Sandbox display</th><td>1440×900, <b>frozen</b> — recorded traces reference on-screen layout</td></tr>
       <tr><th>Host</th><td>Apple Silicon, 24 GB, 14 cores, macOS 27</td></tr>
       <tr><th>Sandbox</th><td>Lima <code>vz</code>, Ubuntu 24.04 arm64, 4 cpu, 8 GB, 40 GB disk</td></tr>
-      <tr><th>Models</th><td><code>gpt-oss:20b</code> 13.8 GB (in use), <code>deepseek-r1:8b</code> 5.2 GB, <code>llama2</code> 3.8 GB, one cloud model never to be selected</td></tr>
+      <tr><th>Models</th><td><code>gpt-oss:20b</code> 13.8 GB (all three jobs, per <code>shared/.models.json</code>; also the fallback — the old fallback silently answered for the front door for half an hour), <code>deepseek-r1:8b</code> 5.2 GB, <code>llama2</code> 3.8 GB, one cloud model never to be selected</td></tr>
       <tr><th>Host from sandbox</th><td><code>host.lima.internal</code> = <code>192.168.5.2</code></td></tr>
-      <tr><th>Shared folders</th><td><code>shared/{training,work,inbox,traces}</code></td></tr>
+      <tr><th>The shop's books</th><td><code>shared/billing/catalogue.csv</code> (stock, cost, price) and <code>sales.csv</code> (append-only line items, cost carried per line)</td></tr>
+      <tr><th>Schedule</th><td><code>shared/.schedules.json</code> — set in Reports, read by the panel every 45s, fired as <code>actor=system</code></td></tr>
+      <tr><th>Shared folders</th><td><code>shared/{training,work,inbox,traces,jobs,billing}</code> — a job is <code>jobs/&lt;stamp&gt;/{in,out,job.json,status.json,program.py}</code></td></tr>
+      <tr><th>Work apps in the sandbox</th><td>LibreOffice (gtk3, for AT-SPI), GnuCash, GIMP, Inkscape, Evince, xterm; tesseract + ocrmypdf with eng/hin/tel</td></tr>
       <tr><th>Snapshot</th><td><code>~/.lima/shishya/snapshots/clean.disk</code> — taken <b>with everything installed</b></td></tr>
       <tr><th>Real material</th><td>17,011-row pharmacy purchase export, 54 columns, suppliers stored wide</td></tr>
       <tr><th>Browser</th><td>Falkon (Qt WebEngine). Epiphany crashes its renderer 156 times in 15 seconds here.</td></tr>
     </tbody>
   </table></div>
 
+  <h3>What the screen costs</h3>
+  <p>Measured inside the sandbox, sampling <code>/proc/&lt;pid&gt;/stat</code> over 14 seconds, bare desktop, as a percentage of one of the four cores.</p>
+  <div class="tw"><table>
+    <thead><tr><th>State</th><th>Xvfb</th><th>x11vnc</th><th>Total</th></tr></thead>
+    <tbody>
+      <tr><td>Nobody watching</td><td>1.1%</td><td>~0%</td><td><b>1.7%</b> — the screen is byte-identical second to second</td></tr>
+      <tr><td>Watched, plain colour</td><td>1.1%</td><td>0.2%</td><td><b>1.3%</b></td></tr>
+      <tr><td>Watched, galaxy at 4 fps</td><td>9.4%</td><td>9.3%</td><td><b>18.7%</b></td></tr>
+      <tr><td>Watched, galaxy at 14 fps</td><td>22.4%</td><td>22.1%</td><td><b>44.5%</b> — what it was silently doing</td></tr>
+    </tbody>
+  </table></div>
+  <p>The wallpaper is the whole of it. Every frame is a full-screen repaint and every full-screen repaint is a full frame to encode and send, so the cost scales with the frame rate and with nothing else. It is charged only while somebody has the screen open, and only while the desktop is bare — X clips the parts an app window covers, so a clone actually working in Calc pays almost none of it. <b>Settings &rarr; a plain colour</b> is the lever if the four cores are wanted elsewhere.</p>
+
+  <h3>What the first question costs</h3>
+  <p>Ollama unloads a model five minutes after its last use, and <code>gpt-oss:20b</code> is 13.8&nbsp;GB — <b>16.4 seconds measured</b> to read it back before a single token is generated, with nothing on screen to say why. Calls now carry <code>keep_alive: 15m</code>, and <code>shishya-warm</code> loads the model when the sandbox comes up, so the first question of a session is answered rather than waited on. <code>./demo.sh check</code> reports whether a model is resident.</p>
+
   <h3>Idiom to match</h3>
   <p>Plain ES modules with no build step, stdlib Python servers, vendored dependencies. Comments explain <i>why</i>, especially where a choice looks odd — most of the comments in this codebase exist because something failed and the next person needs to know not to undo the fix.</p>
 </section>
 
 <footer>
-  Shishya Handbook · 23 August 2026 · 8,639 lines across 35 files · 41 commits<br>
+  Shishya Handbook · 23 August 2026 · 15,421 lines across 72 files · 42 commits<br>
   Everything marked verified was checked against source data, not merely observed to run.
 </footer>
 
