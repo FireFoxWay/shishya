@@ -14,3 +14,30 @@ shared/inbox/*
 .DS_Store
 __pycache__/
 *.pyc
+
+# ─── What the machine accumulated, not what the project is ──────────────────
+# Everything below is written by the running system. It is real state on this
+# laptop and noise in a repository someone else clones: their machine will
+# write its own. The line between them is "could a fresh clone regenerate
+# this by being used" — if yes, it does not belong here.
+
+# Completed work: 26MB of generated reports, invoices and programs across
+# eighteen job folders, each specific to one run on one machine.
+shared/jobs/
+
+# The shop's own trade. catalogue.csv stays — it is the seed data every other
+# part of the system is demonstrated against, and a clone with no catalogue
+# has no shop. What the shop DID is per-machine.
+shared/billing/sales.csv
+shared/billing/customers.csv
+shared/billing/*.before-gst
+
+# Written by the panel and the apps as they are used.
+shared/approvals.json
+shared/tasks.json
+shared/.alerts.json
+shared/.schedules.json
+shared/.role
+shared/.state
+shared/.browsing
+shared/.shutdown-requested

@@ -1,0 +1,10 @@
+# The clone's own working files. Large, regenerable, or both.
+work/
+inbox/
+training/
+traces/*
+!traces/*/
+!traces/*/procedure.json
+*.tmp
+*.part
+*.before-gst
