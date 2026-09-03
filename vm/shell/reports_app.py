@@ -138,14 +138,14 @@ class ReportsApp(Gtk.Window):
 
     def read_schedules(self):
         try:
-            found = json.loads(SCHEDULES.read_text())
+            found = json.loads(SCHEDULES.read_text(encoding="utf-8"))
             return found if isinstance(found, list) else []
         except (OSError, ValueError):
             return []          # no schedule is a valid state, not an error
 
     def write_schedules(self, items):
         tmp = SCHEDULES.with_suffix(".tmp")
-        tmp.write_text(json.dumps(items, indent=2, ensure_ascii=False))
+        tmp.write_text(json.dumps(items, indent=2, ensure_ascii=False), encoding="utf-8")
         tmp.replace(SCHEDULES)          # whole file, renamed — never half a schedule
 
     def show_schedules(self):
@@ -268,7 +268,7 @@ class ReportsApp(Gtk.Window):
         (out / "report.html").write_text(
             reporter.html_report(title, sections, findings, skipped,
                                  "Made by Shishya on this machine, from the "
-                                 "Reports app."))
+                                 "Reports app."), encoding="utf-8")
         pngs = sorted(out.glob("*.png"))
         GLib.idle_add(self.done, out, findings + [f"(not charted: {s})" for s in skipped],
                       f"Done — report.html and {len(pngs)} chart(s) in "

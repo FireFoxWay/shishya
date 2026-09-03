@@ -44,14 +44,14 @@ ACCENTS = [
 
 def load():
     try:
-        return {**DEFAULTS, **json.loads(CONFIG.read_text())}
+        return {**DEFAULTS, **json.loads(CONFIG.read_text(encoding="utf-8"))}
     except (OSError, json.JSONDecodeError):
         return dict(DEFAULTS)
 
 
 def save(config):
     CONFIG.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG.write_text(json.dumps(config, indent=2))
+    CONFIG.write_text(json.dumps(config, indent=2), encoding="utf-8")
 
 
 class SettingsApp(Gtk.Window):

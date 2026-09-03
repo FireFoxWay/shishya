@@ -667,7 +667,7 @@ class Handler(SimpleHTTPRequestHandler):
                           detail="skip" if body.get("skip") else answer["text"][:100])
             target = vm.TRACES / lesson_id / f"answer-{n}.json"
             tmp = target.with_suffix(".tmp")
-            tmp.write_text(json.dumps(answer))
+            tmp.write_text(json.dumps(answer), encoding="utf-8")
             tmp.replace(target)
             return {"answered": n}
 

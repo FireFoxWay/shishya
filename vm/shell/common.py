@@ -39,7 +39,7 @@ ROLE_NAMES = ("clerk", "head")
 def role():
     """clerk or head. Clerk when unset — the safer of the two to assume."""
     try:
-        found = ROLE.read_text().strip().lower()
+        found = ROLE.read_text(encoding="utf-8").strip().lower()
         return found if found in ROLE_NAMES else "clerk"
     except OSError:
         return "clerk"
@@ -51,7 +51,7 @@ def set_role(who):
         return None
     try:
         SHARED.mkdir(parents=True, exist_ok=True)
-        ROLE.write_text(who)
+        ROLE.write_text(who, encoding="utf-8")
     except OSError:
         pass
     return who
@@ -96,7 +96,7 @@ def model_for(job):
     or malformed file must never stop the app from answering."""
     try:
         import json as _json
-        chosen = _json.loads(ROLES.read_text()).get(job)
+        chosen = _json.loads(ROLES.read_text(encoding="utf-8")).get(job)
         if chosen:
             return chosen
     except (OSError, ValueError):
@@ -110,7 +110,7 @@ def set_state(state):
     """What the taskbar pill shows: idle | working | wheel | needs."""
     try:
         SHARED.mkdir(parents=True, exist_ok=True)
-        STATE.write_text(state)
+        STATE.write_text(state, encoding="utf-8")
     except OSError:
         pass
 

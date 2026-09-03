@@ -131,7 +131,7 @@ def main():
     else:
         print("\nNothing answered correctly — the question, not the models, "
               "is the first thing to check.")
-    Path("/tmp/bench.json").write_text(json.dumps(results, indent=2, default=str))
+    Path("/tmp/bench.json").write_text(json.dumps(results, indent=2, default=str), encoding="utf-8")
 
 
 if __name__ == "__main__":

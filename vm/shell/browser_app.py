@@ -54,7 +54,7 @@ def allowed():
     """Is browsing switched on? Read from the file the host writes, not
     guessed — the sandbox should not be the authority on its own permissions."""
     try:
-        return STATE.read_text().strip() == "on"
+        return STATE.read_text(encoding="utf-8").strip() == "on"
     except OSError:
         return False
 

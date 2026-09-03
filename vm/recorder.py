@@ -275,7 +275,7 @@ def start(label):
         sys.exit("pyatspi missing — this runs inside the sandbox, not on the host")
 
     rec = Recorder(label)
-    PIDFILE.write_text(str(os.getpid()))
+    PIDFILE.write_text(str(os.getpid()), encoding="utf-8")
 
     for ev in EVENTS:
         pyatspi.Registry.registerEventListener(rec.on_event, ev)
@@ -306,7 +306,7 @@ def start(label):
 def stop():
     if not PIDFILE.exists():
         sys.exit("not recording")
-    os.kill(int(PIDFILE.read_text()), signal.SIGTERM)
+    os.kill(int(PIDFILE.read_text(encoding="utf-8")), signal.SIGTERM)
 
 
 def probe():

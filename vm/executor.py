@@ -351,7 +351,7 @@ def wait_answer(ask_dir, n):
     while time.time() < deadline:
         if path.exists():
             try:
-                answer = json.loads(path.read_text())
+                answer = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 answer = None
             path.unlink(missing_ok=True)      # consumed — a re-run asks afresh
@@ -366,7 +366,7 @@ def load(trace_dir):
     path = Path(trace_dir)
     if path.is_dir():
         path = path / "procedure.json"
-    return json.loads(path.read_text())
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def read_plan(proc):
@@ -560,7 +560,7 @@ if __name__ == "__main__":
             return
         procedure["taught_by_asking"] = True
         (trace_dir / "procedure.json").write_text(
-            json.dumps(procedure, indent=2, ensure_ascii=False))
+            json.dumps(procedure, indent=2, ensure_ascii=False), encoding="utf-8")
 
     if args.as_json:
         # Flushed per line. The panel is reading this pipe while the clone is

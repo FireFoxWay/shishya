@@ -89,7 +89,12 @@ check() {
   # last viewer goes. Proved by pixels, not by CPU: two screenshots taken
   # seconds apart must be byte-identical.
   if [ "$(inguest bash -c 'ss -tn state established "( sport = :6080 )" | grep -c 6080')" = "0" ]; then
-    asclone 'scrot -o /tmp/still-a.png; sleep 3; scrot -o /tmp/still-b.png'
+    # Wait out the end of the minute first. The taskbar clock reads %H:%M, so
+    # two shots that straddle a minute boundary differ for a reason that is
+    # not a fault — and a check that cries wolf one run in twenty gets
+    # ignored on the run that matters.
+    asclone 'while [ $(date +%S) -gt 50 ]; do sleep 1; done
+             scrot -o /tmp/still-a.png; sleep 3; scrot -o /tmp/still-b.png'
     if [ "$(inguest md5sum /tmp/still-a.png | cut -d" " -f1)" \
        = "$(inguest md5sum /tmp/still-b.png | cut -d" " -f1)" ]; then
       ok "screen is still with no viewer attached"

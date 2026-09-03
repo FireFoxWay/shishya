@@ -689,7 +689,7 @@ def describe_material():
     notes, spent = [], 0
     for p in sorted(common.TRAINING.glob("*notes.md")):
         try:
-            text = p.read_text()[:NOTE_BUDGET]
+            text = p.read_text(encoding="utf-8")[:NOTE_BUDGET]
         except OSError:
             continue
         if spent + len(text) > 3 * NOTE_BUDGET:
@@ -741,7 +741,7 @@ def run_script(code):
     the traceback is the useful part when the model has to read it back."""
     with tempfile.TemporaryDirectory() as tmp:
         script = Path(tmp) / "job.py"
-        script.write_text(code)
+        script.write_text(code, encoding="utf-8")
         try:
             p = subprocess.run([sys.executable, str(script)],
                                capture_output=True, text=True,

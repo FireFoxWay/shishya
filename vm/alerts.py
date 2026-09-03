@@ -37,7 +37,7 @@ MOST = 5
 def put_status(job, **fields):
     fields.setdefault("t", round(time.time(), 1))
     tmp = job / ".status.tmp"
-    tmp.write_text(json.dumps(fields, ensure_ascii=False))
+    tmp.write_text(json.dumps(fields, ensure_ascii=False), encoding="utf-8")
     tmp.replace(job / "status.json")
 
 
@@ -131,12 +131,12 @@ def main(job_dir):
     ALERTS.parent.mkdir(parents=True, exist_ok=True)
     tmp = ALERTS.with_suffix(".tmp")
     tmp.write_text(json.dumps({"at": time.time(), "alerts": found},
-                              ensure_ascii=False, indent=2))
+                              ensure_ascii=False, indent=2), encoding="utf-8")
     tmp.replace(ALERTS)
 
     said = ("\n".join(f"• {a['what']} — {a['do']}" for a in found)
             or "Nothing needs attention.")
-    (out / "alerts.txt").write_text(said)
+    (out / "alerts.txt").write_text(said, encoding="utf-8")
     put_status(job, state="done", files=["alerts.txt"], empty=[], said=said,
                step=f"done — {len(found)} thing(s) worth knowing")
     common.set_state("idle")

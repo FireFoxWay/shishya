@@ -57,7 +57,7 @@ def watching():
     want = f":{NOVNC_PORT:04X}"
     for table in ("/proc/net/tcp", "/proc/net/tcp6"):
         try:
-            with open(table) as fh:
+            with open(table, encoding="utf-8") as fh:
                 next(fh, None)                       # header
                 for line in fh:
                     col = line.split()
@@ -130,7 +130,7 @@ LOOK = {"wallpaper": "#10151c", "accent": "#0078d4", "icon_size": 96,
 
 def read_look():
     try:
-        return {**LOOK, **json.loads(CONFIG.read_text())}
+        return {**LOOK, **json.loads(CONFIG.read_text(encoding="utf-8"))}
     except (OSError, json.JSONDecodeError):
         return dict(LOOK)
 
@@ -256,7 +256,7 @@ def app(name, *args):
         return notice(f"{name} isn't built yet")
     # Errors go to a log rather than /dev/null: an app that dies on startup
     # should leave a trace somewhere, not just fail to appear.
-    log = open(f"/tmp/{name}.log", "a")
+    log = open(f"/tmp/{name}.log", "a", encoding="utf-8")
     subprocess.Popen([sys.executable, str(target), *args], stdout=log, stderr=log)
 
 
@@ -267,7 +267,7 @@ def native(*cmd):
     import shutil
     if shutil.which(cmd[0]) is None:
         return notice(f"{cmd[0]} is not installed in this sandbox")
-    log = open(f"/tmp/{cmd[0]}.log", "a")
+    log = open(f"/tmp/{cmd[0]}.log", "a", encoding="utf-8")
     subprocess.Popen(list(cmd), stdout=log, stderr=log)
 
 
@@ -279,7 +279,7 @@ def terminal():
     gained from reimplementing it. Sized and coloured to sit with the rest
     rather than arriving as a white box from 1994.
     """
-    log = open("/tmp/terminal.log", "a")
+    log = open("/tmp/terminal.log", "a", encoding="utf-8")
     subprocess.Popen(
         ["xterm", "-fa", "Monospace", "-fs", "11",
          "-bg", "#101318", "-fg", "#dfe4ea", "-cr", "#dfe4ea",
@@ -513,7 +513,7 @@ class Taskbar(Gtk.Window):
     def refresh_tasks(self):
         state = "idle"
         try:
-            state = self.STATE.read_text().strip() or "idle"
+            state = self.STATE.read_text(encoding="utf-8").strip() or "idle"
         except OSError:
             pass
         if state != self.state:
@@ -602,7 +602,7 @@ class Taskbar(Gtk.Window):
             # The clone has no sudo, by design. Shutdown is a request it makes
             # of the host, not something it can do to itself — the host owns
             # the sandbox's lifecycle.
-            (SHARED / ".shutdown-requested").write_text("1")
+            (SHARED / ".shutdown-requested").write_text("1", encoding="utf-8")
 
 
 # ─── window list ────────────────────────────────────────────────────────────
@@ -684,7 +684,7 @@ def main():
         # Same file the taskbar pill reads, so there is one source of truth
         # for "the model is working" rather than two that can disagree.
         try:
-            busy = (SHARED / ".state").read_text().strip() == "working"
+            busy = (SHARED / ".state").read_text(encoding="utf-8").strip() == "working"
         except OSError:
             busy = False
         if busy != state.get("busy"):

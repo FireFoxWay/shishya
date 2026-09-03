@@ -10,6 +10,7 @@ the ones that happen from the command line.
 import json
 import re
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -55,11 +56,33 @@ def status():
     return {"state": "absent"}
 
 
+def resolved_config():
+    """vm/lima.yaml with this checkout's own path filled in.
+
+    The mount list in that file IS the security boundary, and it used to name
+    one developer's home directory in full. Anybody else who cloned the
+    repository got a sandbox mounting a path that did not exist on their
+    machine — the boundary was correct for exactly one laptop.
+
+    The template carries __SHISHYA_ROOT__; the resolved copy is written to
+    var/, which is not tracked, because it is true of this machine only.
+
+    as_posix(): limactl wants forward slashes even where the host does not.
+    """
+    text = CONFIG.read_text(encoding="utf-8").replace("__SHISHYA_ROOT__",
+                                                      ROOT.as_posix())
+    out = ROOT / "var" / "lima.yaml"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(text, encoding="utf-8")
+    return out
+
+
 def create():
     """First boot. Slow — pulls the Ubuntu cloud image, then provisions."""
     if status()["state"] != "absent":
         raise VMError(f"VM {NAME!r} already exists")
-    _lima("start", "--tty=false", f"--name={NAME}", str(CONFIG), timeout=1800)
+    _lima("start", "--tty=false", f"--name={NAME}", str(resolved_config()),
+          timeout=1800)
     return status()
 
 
@@ -217,7 +240,7 @@ def lessons():
                    key=lambda f: f.stat().st_mtime, reverse=True)
     for path in found:
         try:
-            proc = json.loads(path.read_text())
+            proc = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue          # never let one unreadable lesson hide the rest
         out.append({
@@ -340,7 +363,7 @@ ALERTS = SHARED / ".alerts.json"
 def role():
     """clerk or head. Clerk when unset — the safer assumption of the two."""
     try:
-        found = ROLE.read_text().strip().lower()
+        found = ROLE.read_text(encoding="utf-8").strip().lower()
         return found if found in ("clerk", "head") else "clerk"
     except OSError:
         return "clerk"
@@ -351,7 +374,7 @@ def set_role(who):
     if who not in ("clerk", "head"):
         raise VMError(f"no such role: {who!r}")
     SHARED.mkdir(parents=True, exist_ok=True)
-    ROLE.write_text(who)
+    ROLE.write_text(who, encoding="utf-8")
     return {"role": who}
 
 
@@ -365,7 +388,7 @@ PENDING = "pending"
 
 def read_approvals():
     try:
-        found = json.loads(APPROVALS.read_text())
+        found = json.loads(APPROVALS.read_text(encoding="utf-8"))
         return found if isinstance(found, list) else []
     except (OSError, ValueError):
         return []
@@ -374,7 +397,7 @@ def read_approvals():
 def _write_approvals(rows):
     SHARED.mkdir(parents=True, exist_ok=True)
     tmp = APPROVALS.with_suffix(".tmp")
-    tmp.write_text(json.dumps(rows, indent=2, ensure_ascii=False))
+    tmp.write_text(json.dumps(rows, indent=2, ensure_ascii=False), encoding="utf-8")
     tmp.replace(APPROVALS)
 
 
@@ -407,7 +430,7 @@ def decide_approval(request_id, approved, note=""):
 def alerts():
     """What the shop should know, as last written by the alert check."""
     try:
-        return json.loads(ALERTS.read_text())
+        return json.loads(ALERTS.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {"alerts": [], "at": None}
 
@@ -416,14 +439,14 @@ def _model_for(job):
     """Which model the sandbox would use for this job — read from the same
     file the apps read, so a report names the model that actually answered."""
     try:
-        return json.loads((SHARED / ".models.json").read_text()).get(job, "?")
+        return json.loads((SHARED / ".models.json").read_text(encoding="utf-8")).get(job, "?")
     except (OSError, ValueError):
         return "?"
 
 
 def read_schedules():
     try:
-        found = json.loads(SCHEDULES.read_text())
+        found = json.loads(SCHEDULES.read_text(encoding="utf-8"))
         return found if isinstance(found, list) else []
     except (OSError, ValueError):
         return []          # no schedule is a valid state, not an error
@@ -432,7 +455,7 @@ def read_schedules():
 def write_schedules(items):
     SHARED.mkdir(parents=True, exist_ok=True)
     tmp = SCHEDULES.with_suffix(".tmp")
-    tmp.write_text(json.dumps(items, indent=2, ensure_ascii=False))
+    tmp.write_text(json.dumps(items, indent=2, ensure_ascii=False), encoding="utf-8")
     tmp.replace(SCHEDULES)          # whole file, renamed — never half a schedule
 
 
@@ -516,7 +539,7 @@ def start_job(brief, runner="worker.py", take_inbox=True):
         net = {"locked": None, "detail": "could not be checked"}
     (job / "job.json").write_text(json.dumps(
         {"brief": brief, "files": handed, "at": time.time(),
-         "egress": net, "model": _model_for("code")}, ensure_ascii=False))
+         "egress": net, "model": _model_for("code")}, ensure_ascii=False), encoding="utf-8")
 
     # Same launch shape as launch_app: setsid, stdin closed, disowned —
     # the worker must outlive this ssh channel.
@@ -550,11 +573,11 @@ def job_state(job_id=None):
 
     out = {"job": job.name, "state": "starting", "step": "handing the files over"}
     try:
-        out.update(json.loads((job / "job.json").read_text()))
+        out.update(json.loads((job / "job.json").read_text(encoding="utf-8")))
     except (OSError, ValueError):
         pass
     try:
-        out.update(json.loads((job / "status.json").read_text()))
+        out.update(json.loads((job / "status.json").read_text(encoding="utf-8")))
     except (OSError, ValueError):
         pass          # the worker has not written yet — "starting" stands
     try:
@@ -723,7 +746,19 @@ DISK = Path.home() / ".lima" / NAME / "disk"
 
 def _clone(src, dst):
     """APFS copy-on-write clone. -c fails loudly rather than silently falling
-    back to a real 40GB copy, which is what we want to know about."""
+    back to a real 40GB copy, which is what we want to know about.
+
+    macOS only, and deliberately not papered over. On anything else the honest
+    failure is "this machine has no instant undo", not a 40GB copy that looks
+    like it worked — and certainly not a FileNotFoundError naming `cp`, which
+    reads like a broken install rather than a platform that does not have the
+    filesystem this depends on.
+    """
+    if sys.platform != "darwin":
+        raise VMError(
+            "snapshots need APFS copy-on-write and this is not macOS. The "
+            "sandbox still runs; the instant undo button does not. On Linux "
+            "or WSL, take the snapshot with your filesystem's own tool.")
     subprocess.run(["cp", "-c", str(src), str(dst)], check=True, timeout=120)
 
 
@@ -914,7 +949,7 @@ def set_browsing(on: bool):
     flag = SHARED / ".browsing"
     try:
         SHARED.mkdir(parents=True, exist_ok=True)
-        flag.write_text("on" if on and result.get("browsing") else "off")
+        flag.write_text("on" if on and result.get("browsing") else "off", encoding="utf-8")
     except OSError:
         pass
     return result
@@ -933,11 +968,23 @@ def browsing_state(fresh=False):
 
 
 def host_online():
-    """Is the Mac itself on a network? The browser is useless otherwise, and
-    saying so plainly beats a page of connection errors."""
-    p = subprocess.run(["route", "-n", "get", "default"],
-                       capture_output=True, text=True, timeout=10)
-    return "gateway:" in p.stdout
+    """Is this machine on a network at all? The browser is useless otherwise,
+    and saying so plainly beats a page of connection errors.
+
+    Asked with a socket rather than `route -n get default`, which is BSD and
+    answered only on macOS — on Linux or Windows that call raised or returned
+    nothing, and browsing was refused on a machine that was perfectly online.
+    Opening a UDP socket toward a public address assigns a local route without
+    sending a packet, which is the same question in a portable form.
+    """
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.settimeout(2)
+            sock.connect(("1.1.1.1", 53))
+            return True
+    except OSError:
+        return False
 
 
 def egress(locked: bool):

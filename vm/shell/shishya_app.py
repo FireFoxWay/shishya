@@ -132,7 +132,7 @@ class ShishyaApp(Gtk.Window):
         common.TRACES.mkdir(parents=True, exist_ok=True)
         for proc_file in sorted(common.TRACES.glob("*/procedure.json"), reverse=True):
             try:
-                proc = json.loads(proc_file.read_text())
+                proc = json.loads(proc_file.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 continue
             self.found.append((proc_file, proc))
@@ -163,7 +163,7 @@ class ShishyaApp(Gtk.Window):
                          for i, line in enumerate(
                              (l for l in edited.splitlines() if l.strip()), 1)]
         proc["edited_by_hand"] = True
-        path.write_text(json.dumps(proc, indent=2, ensure_ascii=False))
+        path.write_text(json.dumps(proc, indent=2, ensure_ascii=False), encoding="utf-8")
         self.status.set_text("Saved. That is what I will do.")
 
     def on_run(self, _b):

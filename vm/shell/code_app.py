@@ -239,7 +239,7 @@ class CodeApp(Gtk.Window):
         began = time.time()
         with tempfile.TemporaryDirectory() as tmp:
             script = Path(tmp) / "script.py"
-            script.write_text(code)
+            script.write_text(code, encoding="utf-8")
             try:
                 p = subprocess.run(
                     [sys.executable, str(script)],
@@ -275,7 +275,7 @@ class CodeApp(Gtk.Window):
         start, end = self.buffer.get_bounds()
         common.WORK.mkdir(parents=True, exist_ok=True)
         path = common.WORK / f"script-{time.strftime('%H%M%S')}.py"
-        path.write_text(self.buffer.get_text(start, end, False))
+        path.write_text(self.buffer.get_text(start, end, False), encoding="utf-8")
         self.say(f"Saved {path.name} to Work")
 
     def say(self, text):

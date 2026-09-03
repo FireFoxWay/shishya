@@ -44,7 +44,7 @@ STALE_AFTER = 24 * 3600
 
 def _read():
     try:
-        found = json.loads(STORE.read_text())
+        found = json.loads(STORE.read_text(encoding="utf-8"))
         return found if isinstance(found, list) else []
     except (OSError, ValueError):
         return []
@@ -53,7 +53,7 @@ def _read():
 def _write(rows):
     STORE.parent.mkdir(parents=True, exist_ok=True)
     tmp = STORE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(rows, indent=2, ensure_ascii=False))
+    tmp.write_text(json.dumps(rows, indent=2, ensure_ascii=False), encoding="utf-8")
     tmp.replace(STORE)          # whole file, renamed — never half a decision
 
 

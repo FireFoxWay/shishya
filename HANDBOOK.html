@@ -237,6 +237,7 @@ footer{margin-top:70px;padding-top:20px;border-top:1px solid var(--rule);
     <tbody>
       <tr><td><code>serve.py</code></td><td>Control panel server and JSON API. Stdlib only — a demo table is no place for a dependency that must resolve at start-up. Listens on 127.0.0.1 <em>and</em> ::1.</td></tr>
       <tr><td><code>host/vm.py</code></td><td>Everything touching the VM: start, stop, snapshot, rollback, egress lock, browsing mode, launch app, close apps, drive app, run command, rebuild display, and list / plan / run / stop a lesson.</td></tr>
+      <tr><td><code>doctor.py</code></td><td>What works on <em>this</em> machine and what does not. Standard library only and no bash, so it runs where <code>demo.sh</code> cannot — which is the point: it is the first thing a second developer runs after cloning, and it answers honestly rather than encouragingly. Also walks the AST and fails if any text read or write has stopped naming its encoding (&sect;21).</td></tr>
       <tr><td><code>host/ledger.py</code></td><td>Append-only JSONL audit log. Nothing in it removes or rewrites a line.</td></tr>
       <tr><td><code>host/secrets.py</code></td><td>Credentials, kept at <code>~/.shishya/</code> — outside the repository, because the whole repo is mounted into the sandbox and anything under it is readable by the clone. Names and lengths are served; values never are.</td></tr>
       <tr><td><code>host/history.py</code></td><td>A git repository of the material — books, schedule, roles, learned procedures — separate from the source history, so "what did the shop do" and "what did we build" stay separate questions.</td></tr>
@@ -1116,8 +1117,40 @@ allow  lesson.taught  step 2 · Type 'taught mid-run' into cell B2</code></pre>
   <p>Plain ES modules with no build step, stdlib Python servers, vendored dependencies. Comments explain <i>why</i>, especially where a choice looks odd — most of the comments in this codebase exist because something failed and the next person needs to know not to undo the fix.</p>
 </section>
 
+<!-- ══════════════════════════════════════════════ -->
+<section id="windows">
+  <h2><span class="num">21</span>Working on this from Windows</h2>
+  <p>Written when a second developer joined on a Windows machine. The honest summary is that <b>half of this runs there and half of it cannot</b>, and being clear about which half is worth more than any amount of shimming.</p>
+
+  <h3>What cannot run, and why not</h3>
+  <p>The sandbox is Lima, which is macOS and Linux and has no Windows build. Everything inside it goes with it: the virtual display, the GTK apps, the recorder, the executor, the accessibility tree they ground on, and the nftables egress lock. APFS copy-on-write snapshots — the undo button — are macOS and a filesystem, not a program. <code>_clone()</code> now says exactly that rather than raising a <code>FileNotFoundError</code> naming <code>cp</code>, which reads like a broken install rather than a platform that does not have the filesystem this depends on.</p>
+  <p>WSL2 with Ubuntu is the real path to the whole thing, and it is weeks rather than an afternoon: <code>host/vm.py</code> shells out to <code>limactl</code> in about twenty places, and under WSL you would be driving the distribution itself rather than a VM inside it. Nested virtualisation under WSL exists and is not something to stake a demonstration on.</p>
+
+  <h3>What does run, which is where most of the work is</h3>
+  <p>The shop's books, GST invoicing, the Tally round trip, the task and experiment records, the secret store, the ledger, and the entire control-panel front end. <code>serve.py</code> starts and reports <i>limactl not installed</i> rather than falling over, so the panel loads and every part of it that does not need the VM works. <code>python doctor.py</code> — standard library only, no bash — reports all of this for the machine it is run on, and is the first thing to run after cloning.</p>
+
+  <div class="box b-bad">
+    <span class="lbl">The one that actually bit</span>
+    <p><b>Windows defaults text files to cp1252, not UTF-8.</b> Every price in this system carries a <code>₹</code>, half the comments are in three scripts, and <code>host/tasks.py</code> wrote its store with <code>json.dumps(…, ensure_ascii=False)</code> — raw non-ASCII — through a <code>write_text()</code> that named no encoding. On macOS the locale is UTF-8 and it worked; on Windows that is a <code>UnicodeEncodeError</code> in the middle of saving a bill.</p>
+    <p>Eighty-four calls across twenty-nine files were reading and writing text at the mercy of whatever locale the machine happened to have. They all name <code>encoding="utf-8"</code> now. Found with the AST rather than a regex, because <code>write_text(json.dumps(rows, indent=2, ensure_ascii=False))</code> has nested parentheses and commas and the encoding belongs on the <em>outer</em> call — a regex gets that wrong in a way that still parses.</p>
+    <p class="lesson"><b>The failure is invisible on the machine most of this was written on.</b> That is what makes it worth a check rather than a convention: <code>doctor.py</code> walks the AST and fails if any text read or write has stopped naming its encoding.</p>
+  </div>
+
+  <h3>The boundary was one laptop's</h3>
+  <p>Found while making the above work. <code>vm/lima.yaml</code>'s mount list <em>is</em> the security boundary — and it wrote out one developer's home directory in full, so it described a boundary that existed on exactly one machine. Anyone else who cloned the repository got a sandbox mounting a path that was not there. It is a template now, carrying <code>__SHISHYA_ROOT__</code>, resolved against the checkout into <code>var/</code> at creation time, which is why first boot is <code>vm.create()</code> and no longer <code>limactl start … vm/lima.yaml</code>.</p>
+  <p><code>host_online()</code> went the same way. It asked <code>route -n get default</code>, which is BSD and answered only on macOS — everywhere else browsing was refused on a machine that was perfectly online. It opens a UDP socket toward a public address instead, which assigns a local route without sending a packet: the same question, portably.</p>
+
+  <h3>Where to start</h3>
+  <ol>
+    <li><code>python doctor.py</code>. It will tell you what your machine can do before you have formed an opinion about it.</li>
+    <li><code>vm/shell/books.py</code> is the best first file. It owns the schema and is the only writer to it, the arithmetic is worth being exact about, and none of it needs a VM.</li>
+    <li><code>web/</code> is plain ES modules and CSS with no build step. Edit, reload, done.</li>
+    <li>The overview screen in §19 is the piece most worth having and is almost entirely front end.</li>
+  </ol>
+</section>
+
 <footer>
-  Shishya Handbook · 3 September 2026 · 17,108 lines across 75 tracked files · 45 commits<br>
+  Shishya Handbook · 3 September 2026 · 17,394 lines across 76 tracked files · 47 commits<br>
   Everything marked verified was checked against source data, not merely observed to run.
 </footer>
 

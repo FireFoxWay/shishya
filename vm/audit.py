@@ -49,7 +49,7 @@ INK = "#1f2430"
 def put_status(job, **fields):
     fields.setdefault("t", round(time.time(), 1))
     tmp = job / ".status.tmp"
-    tmp.write_text(json.dumps(fields, ensure_ascii=False))
+    tmp.write_text(json.dumps(fields, ensure_ascii=False), encoding="utf-8")
     tmp.replace(job / "status.json")
 
 
@@ -181,7 +181,7 @@ def provenance(job):
     exactly the failure this is here to prevent.
     """
     try:
-        spec = json.loads((job / "job.json").read_text())
+        spec = json.loads((job / "job.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return "Made on this machine. Network state at the time was not recorded."
     net = spec.get("egress") or {}
@@ -308,7 +308,7 @@ def main(job_dir):
 
     title = f"Shop audit — {subject:%d %B %Y}"
     (out / "audit.html").write_text(
-        page(title, findings, charts, short, provenance(job)))
+        page(title, findings, charts, short, provenance(job)), encoding="utf-8")
 
     import re
     plain = [re.sub(r"<[^>]+>", "", f) for f in findings]

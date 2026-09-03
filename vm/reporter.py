@@ -52,7 +52,7 @@ def put_status(job, **fields):
     """Same contract as worker.py: whole file, renamed into place."""
     fields.setdefault("t", round(time.time(), 1))
     tmp = job / ".status.tmp"
-    tmp.write_text(json.dumps(fields, ensure_ascii=False))
+    tmp.write_text(json.dumps(fields, ensure_ascii=False), encoding="utf-8")
     tmp.replace(job / "status.json")
 
 
@@ -250,7 +250,7 @@ def provenance(job):
     exactly the failure this is here to prevent.
     """
     try:
-        spec = json.loads((job / "job.json").read_text())
+        spec = json.loads((job / "job.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return "Made on this machine. Network state at the time was not recorded."
     net = spec.get("egress") or {}
@@ -329,10 +329,10 @@ def main(job_dir):
         common.set_state("idle")
         return
 
-    title = (json.loads((job / "job.json").read_text()).get("brief") or "").strip() \
+    title = (json.loads((job / "job.json").read_text(encoding="utf-8")).get("brief") or "").strip() \
         or "Report"
     (out / "report.html").write_text(
-        html_report(title, sections, findings, skipped, provenance(job)))
+        html_report(title, sections, findings, skipped, provenance(job)), encoding="utf-8")
     files = sorted(f.name for f in out.iterdir() if f.is_file() and f.stat().st_size)
     put_status(job, state="done", files=files, empty=[],
                said="\n".join(findings[:10]),

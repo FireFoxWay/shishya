@@ -37,7 +37,7 @@ KEEP = 30          # a month of dailies; older ones are pruned
 def put_status(job, **fields):
     fields.setdefault("t", round(time.time(), 1))
     tmp = job / ".status.tmp"
-    tmp.write_text(json.dumps(fields, ensure_ascii=False))
+    tmp.write_text(json.dumps(fields, ensure_ascii=False), encoding="utf-8")
     tmp.replace(job / "status.json")
 
 
@@ -59,7 +59,7 @@ def summarise(where):
             f"  of which GST          ₹{books.money(tax)}\n\n"
             f"These are plain CSV. Open catalogue.csv or sales.csv in any\n"
             f"spreadsheet — you do not need Shishya to read them back.\n")
-    (where / "what-is-in-here.txt").write_text(text)
+    (where / "what-is-in-here.txt").write_text(text, encoding="utf-8")
     return text
 
 
@@ -106,7 +106,7 @@ def main(job_dir):
     # what was saved without anybody opening a folder.
     (out / "backup-summary.txt").write_text(
         summary + (f"\nPruned {dropped} backup(s) older than the last {KEEP}.\n"
-                   if dropped else ""))
+                   if dropped else ""), encoding="utf-8")
 
     put_status(job, state="done",
                files=["backup-summary.txt"], empty=[],

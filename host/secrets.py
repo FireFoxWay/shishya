@@ -49,7 +49,7 @@ class SecretError(RuntimeError):
 
 def _load():
     try:
-        found = json.loads(STORE.read_text())
+        found = json.loads(STORE.read_text(encoding="utf-8"))
         return found if isinstance(found, dict) else {}
     except (OSError, ValueError):
         return {}
@@ -133,7 +133,7 @@ def leaked_into(root):
         if not path.is_file() or path.stat().st_size > 4_000_000:
             continue
         try:
-            text = path.read_text(errors="ignore")
+            text = path.read_text(errors="ignore", encoding="utf-8")
         except OSError:
             continue
         for value in values:

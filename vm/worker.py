@@ -66,7 +66,7 @@ def put_status(job, **fields):
     renamed into place so a poll can never see half a JSON object."""
     fields.setdefault("t", round(time.time(), 1))
     tmp = job / ".status.tmp"
-    tmp.write_text(json.dumps(fields, ensure_ascii=False))
+    tmp.write_text(json.dumps(fields, ensure_ascii=False), encoding="utf-8")
     tmp.replace(job / "status.json")
 
 
@@ -93,7 +93,7 @@ def describe_inputs(files):
     notes, spent = [], 0
     for n in sorted(common.TRAINING.glob("*notes.md")):
         try:
-            text = n.read_text()[:3500]
+            text = n.read_text(encoding="utf-8")[:3500]
         except OSError:
             continue
         if spent + len(text) > 10_500:
@@ -113,7 +113,7 @@ def describe_inputs(files):
 def run_program(code, job):
     """Run the generated program with the job directory as its world."""
     script = job / "program.py"          # saved, not temp: the program is
-    script.write_text(code)              # part of the deliverable — it is how
+    script.write_text(code, encoding="utf-8")              # part of the deliverable — it is how
     try:                                 # anyone checks the outputs are right
         p = subprocess.run([sys.executable, str(script)],
                            capture_output=True, text=True,
@@ -135,7 +135,7 @@ def produced(out_dir):
 
 def main(job_dir):
     job = Path(job_dir)
-    spec = json.loads((job / "job.json").read_text())
+    spec = json.loads((job / "job.json").read_text(encoding="utf-8"))
     brief = spec["brief"]
     out = job / "out"
     out.mkdir(exist_ok=True)

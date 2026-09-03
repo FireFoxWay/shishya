@@ -78,7 +78,7 @@ def start():
     # config belongs to the person, and a tool should not edit it.
     _git("config", "user.name", "Shishya")
     _git("config", "user.email", "shishya@localhost")
-    (SHARED / ".gitignore").write_text(IGNORE)
+    (SHARED / ".gitignore").write_text(IGNORE, encoding="utf-8")
     return save("history started")
 
 

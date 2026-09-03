@@ -32,7 +32,7 @@ def cpu_snapshot():
     these — a single reading tells you the average since boot, which is not
     what anybody means by "CPU usage"."""
     out = []
-    with open("/proc/stat") as f:
+    with open("/proc/stat", encoding="utf-8") as f:
         for line in f:
             if not line.startswith("cpu") or line.startswith("cpu "):
                 continue
@@ -44,7 +44,7 @@ def cpu_snapshot():
 
 def memory():
     info = {}
-    with open("/proc/meminfo") as f:
+    with open("/proc/meminfo", encoding="utf-8") as f:
         for line in f:
             key, _, rest = line.partition(":")
             info[key] = int(rest.split()[0]) * 1024
@@ -138,7 +138,7 @@ class SystemApp(Gtk.Window):
 
     def load_look(self):
         try:
-            look = json.loads(LOOK.read_text())
+            look = json.loads(LOOK.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             look = {}
         self.look = look
@@ -147,7 +147,7 @@ class SystemApp(Gtk.Window):
 
     def save_look(self):
         LOOK.parent.mkdir(parents=True, exist_ok=True)
-        LOOK.write_text(json.dumps(self.look, indent=2))
+        LOOK.write_text(json.dumps(self.look, indent=2), encoding="utf-8")
 
     def on_live(self, btn):
         if btn.get_active():
@@ -195,7 +195,7 @@ class SystemApp(Gtk.Window):
 
         state = "idle"
         try:
-            state = (common.SHARED / ".state").read_text().strip() or "idle"
+            state = (common.SHARED / ".state").read_text(encoding="utf-8").strip() or "idle"
         except OSError:
             pass
         if state == "working":

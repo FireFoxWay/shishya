@@ -32,14 +32,14 @@ DEFAULT_SHOP = "YOUR SHOP NAME\nStreet address, City\nGSTIN: not set"
 
 def shop_details():
     try:
-        text = SHOP.read_text().strip()
+        text = SHOP.read_text(encoding="utf-8").strip()
         if text:
             return text
     except OSError:
         pass
     try:
         SHOP.parent.mkdir(parents=True, exist_ok=True)
-        SHOP.write_text(DEFAULT_SHOP)
+        SHOP.write_text(DEFAULT_SHOP, encoding="utf-8")
     except OSError:
         pass
     return DEFAULT_SHOP

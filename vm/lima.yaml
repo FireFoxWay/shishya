@@ -27,16 +27,23 @@ disk: "40GiB"
 # reach anything that isn't on this list, because it isn't mounted.
 # `~` here is the HOST's home. Add a line to grant a folder; delete one to
 # revoke it. Nothing else on the laptop exists as far as the clone knows.
+#
+# __SHISHYA_ROOT__ is filled in with this checkout's own path when the VM is
+# created — host/vm.py writes the resolved copy to var/ and hands THAT to
+# limactl. It used to be one developer's absolute home path written out in
+# full, which meant the file described a boundary that existed on exactly one
+# laptop; anybody else who cloned the repository got a sandbox mounting a
+# directory that was not there.
 mounts:
   # The repo itself, read-only, so the VM can run its own provisioning and
   # the in-VM agent without us copying files around.
-  - location: "/Users/karthikeyakoduru/Desktop/--/Projects/shishya"
+  - location: "__SHISHYA_ROOT__"
     mountPoint: "/opt/shishya"
     writable: false
 
   # The only writable window into the host. Everything the clone is allowed
   # to touch goes here, and nothing else on the laptop is reachable at all.
-  - location: "/Users/karthikeyakoduru/Desktop/--/Projects/shishya/shared"
+  - location: "__SHISHYA_ROOT__/shared"
     mountPoint: "/home/clone/shared"
     writable: true
 

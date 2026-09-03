@@ -354,7 +354,7 @@ class FindingsApp(Gtk.Window):
 def run(code):
     with tempfile.TemporaryDirectory() as tmp:
         script = Path(tmp) / "check.py"
-        script.write_text(code)
+        script.write_text(code, encoding="utf-8")
         try:
             p = subprocess.run([sys.executable, str(script)],
                                capture_output=True, text=True,

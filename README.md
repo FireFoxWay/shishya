@@ -44,18 +44,56 @@ Not `click at (412, 890)`. A clerk can read that. So can a judge.
 ## Run it
 
 ```bash
-brew install lima                                       # once
-limactl start --tty=false --name=shishya vm/lima.yaml    # first boot: slow
-./demo.sh                                                # everything, ready
+python3 doctor.py            # what works on this machine, and what does not
+brew install lima            # once
+python3 -c "import host.vm as vm; vm.create()"   # first boot: slow
+./demo.sh                    # everything, ready
 ```
 
 Then open <http://localhost:8200>.
+
+`vm.create()` rather than `limactl start … vm/lima.yaml` directly: the mount
+list in that file **is** the security boundary, so it is a template carrying
+`__SHISHYA_ROOT__` and gets resolved against *your* checkout into `var/`. It
+used to name one developer's home directory in full, which meant it described
+a boundary that existed on exactly one laptop.
 
 `./demo.sh` brings the whole stack up in dependency order and is the thing to
 run when something looks wrong. It exists because a dead Xvfb presents as
 "input is broken" rather than "there is no display" — every symptom points at
 the wrong layer, and guessing which component failed wastes the time you do
 not have. `./demo.sh reset` also rolls the sandbox back to clean.
+
+### On Windows
+
+**The sandbox does not run.** Lima is macOS and Linux; there is no Windows
+build, and the virtual display, the GTK apps, the recorder, the executor and
+the egress lock all live inside it.
+
+**About half the codebase does run**, and it is the half where most of the
+work is. `python doctor.py` says so specifically for your machine:
+
+| Runs on Windows | Needs macOS or Linux |
+|---|---|
+| `vm/shell/books.py` — stock, sales, margin, GST, void, returns | the Lima VM and everything in it |
+| `vm/shell/invoice.py` — GST tax invoices | the GTK desktop apps |
+| `vm/tally.py` — the Tally XML round trip | the recorder and the executor |
+| `host/{tasks,experiments,secrets,ledger,history}.py` | the egress lock (nftables) |
+| `web/` — the whole control-panel front end, no build step | APFS snapshots (macOS only) |
+| `serve.py` — the panel starts and reports "limactl not installed" | |
+
+One thing to know before you write a line: **Windows defaults text files to
+cp1252, not UTF-8**, and every price in this system carries a `₹`. Saving a
+bill on a machine with a cp1252 locale used to raise `UnicodeEncodeError` in
+the middle of writing the file. Every text read and write in the repository
+now names `encoding="utf-8"` explicitly, and `doctor.py` walks the AST and
+fails if any call has stopped doing so. **Keep it that way** — the failure is
+silent on a Mac and only shows up on your machine.
+
+If you want the full sandbox, WSL2 with Ubuntu is the path, and it is real
+work rather than an afternoon: `host/vm.py` shells out to `limactl` in about
+twenty places, and under WSL you would be driving the distro itself instead of
+a VM. See §21 of the handbook.
 
 ---
 

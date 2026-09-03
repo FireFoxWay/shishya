@@ -133,13 +133,13 @@ class ModelsApp(Gtk.Window):
 
     def load_choice(self):
         try:
-            return json.loads(common.ROLES.read_text())
+            return json.loads(common.ROLES.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return {}
 
     def save_choice(self):
         common.ROLES.parent.mkdir(parents=True, exist_ok=True)
-        common.ROLES.write_text(json.dumps(self.choice, indent=2))
+        common.ROLES.write_text(json.dumps(self.choice, indent=2), encoding="utf-8")
 
     def reload(self):
         try:

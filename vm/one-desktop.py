@@ -44,7 +44,7 @@ WHEEL = re.compile(
 def main():
     if not SYSTEM.exists():
         sys.exit(f"no system openbox config at {SYSTEM}")
-    text = SYSTEM.read_text()
+    text = SYSTEM.read_text(encoding="utf-8")
 
     # Only the count inside <desktops>. A bare search for <number> would also
     # match the one in <margins> and elsewhere.
@@ -59,7 +59,7 @@ def main():
     MINE.parent.mkdir(parents=True, exist_ok=True)
     if MINE.exists():
         shutil.copy2(MINE, MINE.with_suffix(".xml.bak"))
-    MINE.write_text(text)
+    MINE.write_text(text, encoding="utf-8")
     print(f"one desktop; removed {removed} desktop-switching mouse binding(s)")
     print(f"wrote {MINE}")
 
