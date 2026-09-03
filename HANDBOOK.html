@@ -254,6 +254,7 @@ footer{margin-top:70px;padding-top:20px;border-top:1px solid var(--rule);
     <tbody>
       <tr><td><code>vm/lima.yaml</code></td><td>The sandbox definition. Its mount list <em>is</em> the security boundary.</td></tr>
       <tr><td><code>vm/provision.sh</code></td><td>Builds the sandbox once: dbus, AT-SPI, LibreOffice, Falkon, every Python library, and the systemd units that keep them up. Hands the display stack to <code>vm/display.sh</code>.</td></tr>
+      <tr><td><code>vm/shell/approvals.py</code></td><td>The queue a clerk's request waits in and a head decides on. Append-only, like the ledger; a decision is recorded, then acted on once — verified idempotent rather than assumed. Requests older than 24 hours go stale rather than lingering as something that might still fire.</td></tr>
       <tr><td><code>vm/display.sh</code></td><td>Xvfb, openbox, x11vnc and the noVNC bridge, as re-runnable configuration. Split out of <code>provision.sh</code> because that runs once per machine: a display change used to mean rebuilding the VM. <code>--all</code> restarts X too and closes the clone's apps; without it only the video path is rebuilt.</td></tr>
       <tr><td><code>vm/recorder.py</code></td><td>Records a demonstration as semantic events, plus assembled keystrokes.</td></tr>
       <tr><td><code>vm/executor.py</code></td><td>Performs a learned procedure. Four actions; skips what it does not recognise, halts rather than guessing, and reads each cell back.</td></tr>
@@ -694,10 +695,13 @@ allow  lesson.taught  step 2 · Type 'taught mid-run' into cell B2</code></pre>
     <li><b>Scrolling used to blank the screen.</b> Openbox ships four virtual desktops with the mouse wheel over the desktop bound to switching between them, so a scroll that missed a window replaced everything with an empty workspace — indistinguishable, through a video stream, from every app crashing at once. Now one desktop, checked by <code>./demo.sh check</code>.</li>
     <li><b>Clicking inside the sandbox is unreliable.</b> Stale noVNC connections swallow button releases, so windows raise and tooltips show while nothing activates. Drive from the panel; <b>Fix input</b> rebuilds the display in five seconds without closing apps.</li>
     <li><b>The VM stops when the Mac sleeps.</b> Every time. <code>./demo.sh</code> recovers.</li>
+    <li><b>The egress lock does not survive that restart.</b> nftables rules live in the running kernel and nothing re-applies them at boot, so a sandbox that comes back after the Mac slept comes back <em>open</em>. Found on 3 September by the panel reporting it honestly, which is the only reason it was found at all — the indicator is measured from the guest, so it said OPEN rather than remembering what it had been told. <b>This is the single most testable claim in the project</b>, and a judge asking to see it locked is the likeliest question there is. Until a boot service re-applies it, locking is a step in the pre-flight, not a property of the machine.</li>
     <li><b>Ollama is an app and quits.</b> <code>demo.sh</code> restarts it.</li>
     <li><b>Filenames uploaded before 21 August are mangled</b> (<code>01_20Retail_20Inventory.xlsx</code> was <code>01 Retail Inventory.xlsx</code>). The encoding bug is fixed; old files were never renamed.</li>
     <li><b>The Telugu answer may be saying something different from the English one.</b> Asked the same question, the English reply opens "does <b>not</b> automatically qualify" and the Telugu opens "అవును" — yes. Both then give the 65–75% band and the 15-day certificate rule, so the substance is there and the emphasis is not the same. Nobody on this project reads Telugu, and a policy answer that leads with the wrong word is exactly the kind of error that matters. <b>Do not demonstrate this until a Telugu speaker has read it.</b></li>
     <li><b>16 GB is the floor, not 8.</b> Measured, not guessed: the smallest model that answers correctly needs 7.2 GB resident, on top of the sandbox's own allocation and macOS. A 4 GB VM plus that model plus the system is about 16 GB. <code>./demo.sh</code> does not check this; <code>vm/bench.py</code> measures it.</li>
+    <li><b>This repository cannot be made public as it stands.</b> <code>shared/training/</code> holds a real Hyderabad pharmacy's purchase history — 17,011 rows of what they stock and how much of it they buy, month by month. It is in the repository because it was the most useful training material available, which is a completely different bar from "published forever under our names". Two smaller files read badly even though they are synthetic: <code>APP-3307.txt</code> is a welfare application naming Aadhaar among its documents, and <code>class-9b-term1.csv</code> is named students with marks. All three are in <em>history</em>, across 45 commits, so deleting them from the working tree changes nothing — going public exposes every commit. Removing them properly means <code>git filter-repo</code> and a force-push. Private, with read access granted per person, until that is done.</li>
+    <li><b>There is no hosted demo, and there cannot be one.</b> The mount list in <code>lima.yaml</code> <em>is</em> the security boundary, the model runs on the machine, and the egress lock drops everything outbound. A URL somebody can click and try would mean giving up every one of those — shipping the exact opposite of the claim. The honest answer to "can we try it?" is <b>"yes, on a laptop; if you could try it over the internet it would not be what we are claiming."</b> That is an argument, not an apology.</li>
     <li><b>A cloud model is installed</b> — <code>deepseek-v3.1:671b-cloud</code>. Filtered out of the Models picker so it cannot be chosen by accident, but it exists. Selecting it would destroy the entire sovereignty claim.</li>
     <li><b>Qt WebEngine needed AppArmor's namespace restriction relaxed</b> inside the VM for the browser to render. A real control loosened, defensible only because the VM is the boundary.</li>
     <li><b>An Xvfb can come up with keyboard injection dead.</b> Mouse fine, queries fine, every typed key silently swallowed, for every app. <code>./demo.sh check</code> now types a probe and reads it back; the cure is the full display-stack restart in <code>./demo.sh</code>.</li>
@@ -984,6 +988,24 @@ allow  lesson.taught  step 2 · Type 'taught mid-run' into cell B2</code></pre>
 <!-- ══════════════════════════════════════════════ -->
 <section id="demo">
   <h2><span class="num">18</span>Demonstrating it</h2>
+
+  <h3>Twenty minutes before, not five</h3>
+  <p>Twenty, so there is room to fix whatever the checks find. Five only tells you that you are about to have a bad time.</p>
+  <ol>
+    <li><code>./demo.sh check</code> — 24 lines, about a minute. Everything must be green. It types a key into a real window and reads it back, compares each running process against its own source, and reads the egress lock from the guest rather than from memory.</li>
+    <li><code>./demo.sh rehearse</code> — every claim you are about to make, exercised, before an audience exists.</li>
+    <li><b>Lock egress by hand.</b> It does not survive the restart the sleeping Mac caused (§15). The panel will tell you the truth; believe it over your memory of having locked it yesterday.</li>
+    <li><b><code>caffeinate</code>.</b> If the Mac sleeps mid-call the sandbox stops, and recovery is minutes with people watching.</li>
+    <li><b>Confirm a model is resident.</b> The check says so. Cold, the first question costs 16.4 seconds of silence before its first word.</li>
+  </ol>
+
+  <div class="box b-warn">
+    <span class="lbl">Presenting over a video call</span>
+    <p>You are screen-sharing a video stream of a screen, and the encoder on the far end spends its bits on whatever <em>moves</em>. The animated wallpaper moves across all 1440&times;900, continuously — so the spreadsheet numbers somebody is squinting at are precisely what gets sacrificed to pay for it.</p>
+    <p><b>Set the wallpaper to a plain colour for the call</b> (Settings, in the sandbox). Measured: 18.7% of a core down to 1.3%, and more to the point the screen becomes still except where work is actually happening. Switch it back afterwards.</p>
+  </div>
+
+  <h3>The six minutes</h3>
   <ol>
     <li><b>Open on the problem, not the product.</b> Staff paste confidential records into cloud AI; once it leaves the building you cannot control or audit it.</li>
     <li><b>Drop their own documents on the panel</b> and press <b>Use as sources</b>. The chat notices and says what it read.</li>
@@ -1006,6 +1028,17 @@ allow  lesson.taught  step 2 · Type 'taught mid-run' into cell B2</code></pre>
 <!-- ══════════════════════════════════════════════ -->
 <section id="next">
   <h2><span class="num">19</span>What to build next</h2>
+
+  <h3>What this is, said the other way round</h3>
+  <p>Worth settling before any of the work below, because it changes what gets built rather than only what gets said.</p>
+  <p>Counted honestly, this is already about eighty per cent of an ERP. An ERP core is inventory, sales, invoicing, receivables, reporting, an audit trail and roles. There is a catalogue with cost, price and stock; a billing counter; GST tax invoices broken out by rate; void and returns; customers and khata; a stock audit against reorder points; margin and month-sales reporting; scheduled runs; alerts; backups; clerk and head with approvals between them; a Tally round trip; and an append-only ledger of every action and every refusal. <b>Tally does not have half of that, and Tally is what these shops actually use.</b></p>
+  <p>So the question was never whether to build an ERP. It is whether to <em>say</em> ERP — and the answer is yes, with one condition that matters more than the reframing.</p>
+  <p>"An ERP for a shop that cannot afford one" places itself in a sentence, names its buyer, and names the incumbent it should be measured against. Six minutes is not long enough to make someone work for that. But an AI dashboard is the most common project at any hackathon in the world, and a pitch that leads with the dashboard is competing with forty teams who wired a chart library to a language model. What almost nobody has is the rest of it: <b>it learns a procedure by being shown once, in a real GUI, then performs it — and afterwards you can prove exactly what it did and what it was refused.</b></p>
+  <p class="lesson">The ERP is the demonstration. Learning by demonstration, and the ledger, are the claim. Lead with the shop because it is concrete; the moment there is attention, teach it something live and let it do the thing.</p>
+  <p>"Personalised" is already true and should be said plainly. It does not learn shops in general. It learns <em>this</em> one — the lessons in <code>shared/lessons/</code> are the personalisation, and they are per-machine by construction.</p>
+  <p>The one piece of new interface that earns its place is <b>a single overview screen</b>: today's takings and margin, stock at its reorder point, what is owed, what is scheduled, what is waiting on a person. Every one of those numbers already exists — they are scattered across Billing, Reports, Alerts and the panel. Gathering them is half a day and it is what "ERP" <em>looks</em> like in the first fifteen seconds of a video call. Purchase orders, the supplier side and a real profit-and-loss are genuine ERP scope and genuine weeks. Not with a screening pending.</p>
+
+  <h3>The order of work</h3>
   <p>Ordered by what a judge finds first, not by what is most interesting to build. The two at the top need a person and a Windows machine; nothing in this repository can close them.</p>
 
   <div class="tw"><table>
@@ -1084,7 +1117,7 @@ allow  lesson.taught  step 2 · Type 'taught mid-run' into cell B2</code></pre>
 </section>
 
 <footer>
-  Shishya Handbook · 23 August 2026 · 15,421 lines across 72 files · 42 commits<br>
+  Shishya Handbook · 3 September 2026 · 17,108 lines across 75 tracked files · 45 commits<br>
   Everything marked verified was checked against source data, not merely observed to run.
 </footer>
 
