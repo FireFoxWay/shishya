@@ -237,6 +237,8 @@ footer{margin-top:70px;padding-top:20px;border-top:1px solid var(--rule);
     <tbody>
       <tr><td><code>serve.py</code></td><td>Control panel server and JSON API. Stdlib only — a demo table is no place for a dependency that must resolve at start-up. Listens on 127.0.0.1 <em>and</em> ::1.</td></tr>
       <tr><td><code>host/vm.py</code></td><td>Everything touching the VM: start, stop, snapshot, rollback, egress lock, browsing mode, launch app, close apps, drive app, run command, rebuild display, and list / plan / run / stop a lesson.</td></tr>
+      <tr><td><code>shishya</code></td><td>The terminal. <code>./shishya</code> for the loop, or <code>board</code> / <code>sum FILE</code> / <code>ask "…"</code> to do one thing and exit. Four capabilities only — summarise a document, summarise one you name, read the dashboard, ask it things. Standard library, no colour when piped, and nothing that needs a browser.</td></tr>
+      <tr><td><code>host/brain.py</code></td><td>Asking the model and reading a file, host-side. Streams, so a slow answer looks like work rather than a hang.</td></tr>
       <tr><td><code>doctor.py</code></td><td>What works on <em>this</em> machine and what does not. Standard library only and no bash, so it runs where <code>demo.sh</code> cannot — which is the point: it is the first thing a second developer runs after cloning, and it answers honestly rather than encouragingly. Also walks the AST and fails if any text read or write has stopped naming its encoding (&sect;21).</td></tr>
       <tr><td><code>host/ledger.py</code></td><td>Append-only JSONL audit log. Nothing in it removes or rewrites a line.</td></tr>
       <tr><td><code>host/secrets.py</code></td><td>Credentials, kept at <code>~/.shishya/</code> — outside the repository, because the whole repo is mounted into the sandbox and anything under it is readable by the clone. Names and lengths are served; values never are.</td></tr>
@@ -1149,8 +1151,30 @@ allow  lesson.taught  step 2 · Type 'taught mid-run' into cell B2</code></pre>
   </ol>
 </section>
 
+<!-- ══════════════════════════════════════════════ -->
+<section id="terminal">
+  <h2><span class="num">22</span>The terminal</h2>
+  <p>The laptop with the model on it is in one place and you are in another. The control panel is a browser on localhost, so reaching it from another country means forwarding a port and hoping a video stream survives a domestic connection. <code>./shishya</code> needs none of that: ssh in, type, read.</p>
+  <p>Four things, and the restraint is the design. Summarise a document already on the machine, summarise one you name by path, read the dashboard as text, and ask it things the way you would any assistant. Teaching a procedure, watching the clone drive Calc and rolling the sandbox back all need to be <em>seen</em> and stay in the panel — a terminal that attempted them would do them badly.</p>
+  <p>Standard library only, because this runs on a machine you have just ssh'd into and <code>pip install</code> is not a step that belongs between somebody and their own data. Colour switches off rather than degrading: <code>NO_COLOR</code> is honoured, a pipe gets plain text, and so does a dumb <code>TERM</code>.</p>
+
+  <div class="fail">
+    <h4><code>"think": false</code> made the model answer nothing at all</h4>
+    <p class="sym">Symptom: <code>./shishya sum</code> printed an empty summary after 32 seconds. Doubling the budget produced an empty summary after 196.</p>
+    <dl>
+      <dt>Wrong theory</dt><dd>That the prompt was being truncated — the same fault the chat app had, so it was the obvious suspect. Measured instead of assumed: 5,458 tokens of prompt inside a 10,926 window, with 5,454 to spare. Nothing was truncated.</dd>
+      <dt>Cause</dt><dd><code>"think": false</code>. It looks like the way to tell a reasoning model to stop reasoning. On gpt-oss it reasons anyway, Ollama reports that separately as <code>thinking</code>, <b>the whole <code>num_predict</code> budget is spent on it</b>, and <code>response</code> comes back empty. The setting did not disable the reasoning; it only stopped anyone seeing it.</dd>
+      <dt>Fix, measured on the same 1,001-row catalogue</dt><dd><code>think</code> omitted: 61.0s, 497 words of reasoning, a 184-word answer. <code>think: "low"</code>: <b>15.1s, 5 words of reasoning, a 237-word answer.</b> Four times faster <i>and</i> the better answer, because the reasoning was the expensive part and almost none of it was needed to describe a file. The sample handed to the model also came down from 24,000 characters to 6,000 — the shape line already says how big the real thing is, and that is the part that matters.</dd>
+      <dt>Lesson</dt><dd class="lesson">A flag that names what you want is not the same as a flag that does it. <b>The reasoning is spent out of the answer's budget</b>, so "stop thinking" and "think less" are opposite outcomes on the same dial. And the terminal now shows the reasoning as it streams, with a word count and a clock — half a minute of a still cursor is how the last silence of this kind went undiagnosed for thirty.</dd>
+    </dl>
+  </div>
+
+  <h3>Where the sandbox line falls</h3>
+  <p>The terminal talks to Ollama on the host directly rather than driving the sandbox's chat window through the accessibility tree. That is not a hole in the boundary. The sandbox contains the <em>clone</em> — it is what stops an agent reading the laptop — and was never meant to stop the <em>owner</em> reading their own files. A terminal the owner opened, over ssh they authenticated, asking about a path they typed, is the owner reading their own file. Every one of those reads is recorded in the ledger regardless.</p>
+</section>
+
 <footer>
-  Shishya Handbook · 3 September 2026 · 17,394 lines across 76 tracked files · 47 commits<br>
+  Shishya Handbook · 4 September 2026 · 20,250 lines across 85 tracked files · 49 commits<br>
   Everything marked verified was checked against source data, not merely observed to run.
 </footer>
 

@@ -30,13 +30,19 @@
     <div class="paneHead">
       <span>The clone</span>
       <div class="tools">
-        <!-- Two views of the same pane. The clone's screen is what the sandbox
-             is doing; the dashboard is what it has done. Judges want the
-             second one first and the first one second. -->
-        <button id="tabScreen" class="tool tab on">Screen</button>
-        <button id="tabBoard" class="tool tab">Dashboard</button>
+        <!-- Two views of the same pane, joined into one control so they read
+             as a choice between two things rather than as two more buttons.
+             Four equal-weight buttons across the top made the header look
+             like a toolbar with no hierarchy in it. -->
+        <span class="seg">
+          <button id="tabScreen" class="tool tab on">Screen</button>
+          <button id="tabBoard" class="tool tab">Dashboard</button>
+        </span>
         <button id="btnWheel" class="wheel on">You have control</button>
-        <button id="btnReload" class="tool ghost">Reconnect</button>
+        <!-- Reconnect matters about once a fortnight and took the same space
+             as the control that matters every minute. A glyph, with the word
+             on hover. -->
+        <button id="btnReload" class="tool ghost mini" title="Reconnect to the clone's display">↻</button>
       </div>
     </div>
     <!-- noVNC is served from inside the VM itself (port 6080, forwarded).
@@ -87,7 +93,7 @@
 
         <!-- 1b — shell -->
         <section id="s-shell" class="screenBody" hidden>
-          <div class="boardHead"><h1>Shell</h1>
+          <div class="boardHead"><h1>Terminal</h1>
             <span class="who">runs inside the sandbox, as the clone</span></div>
           <pre id="shellOut" class="term"></pre>
           <form id="shellForm" class="entry">

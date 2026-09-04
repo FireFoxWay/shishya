@@ -1,0 +1,435 @@
+#!/usr/bin/env python3
+"""
+Shishya, in a terminal.
+
+    ./shishya                 the terminal
+    ./shishya board           print the dashboard and exit
+    ./shishya sum FILE        summarise a file and exit
+    ./shishya ask "..."       one question and exit
+
+Why this exists: the laptop with the model on it is somewhere, and you are
+somewhere else. The control panel is a browser on localhost, so reaching it
+from another country means forwarding a port and hoping the video stream
+holds up over a domestic connection. A terminal needs none of that — ssh in,
+type, read. It is also simply the way some people prefer to work.
+
+Four things only, which is the whole design:
+
+  1  summarise a document that is already on the laptop
+  2  summarise one you name by path
+  3  see the dashboard as text
+  4  ask it things, the way you would any assistant
+
+Everything else — teaching a procedure, watching the clone drive Calc,
+rolling the sandbox back — needs to be seen and belongs in the panel. A
+terminal that tried to do those would do them badly.
+
+Standard library only. This has to run on a machine you have just ssh'd into,
+and "pip install" is not a step that belongs between you and your own data.
+"""
+
+import json
+import os
+import shutil
+import sys
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT / "host"))
+
+import brain          # noqa: E402
+import ledger         # noqa: E402
+
+PANEL = os.environ.get("SHISHYA_PANEL", "http://localhost:8200")
+
+
+# ─── the look ───────────────────────────────────────────────────────────────
+# Colour is switched off rather than degraded when the terminal cannot take
+# it: NO_COLOR is honoured, a pipe gets plain text, and a dumb TERM gets plain
+# text. Escape codes in a log file help nobody.
+
+TTY = sys.stdout.isatty()
+COLOUR = TTY and not os.environ.get("NO_COLOR") and os.environ.get("TERM") != "dumb"
+
+
+def c(code, text):
+    return f"\033[{code}m{text}\033[0m" if COLOUR else text
+
+
+DIM    = lambda t: c("38;5;245", t)
+FAINT  = lambda t: c("38;5;240", t)
+WARM   = lambda t: c("38;5;180", t)      # the accent — a dry sand, not orange
+BRIGHT = lambda t: c("1", t)
+INK    = lambda t: c("38;5;252", t)
+BAD    = lambda t: c("38;5;174", t)
+INV    = lambda t: c("7", t)
+
+
+def width():
+    return min(shutil.get_terminal_size((88, 24)).columns, 100)
+
+
+def rule(label=""):
+    w = width()
+    if not label:
+        return FAINT("─" * w)
+    head = f"── {label} "
+    return FAINT(head + "─" * max(0, w - len(head)))
+
+
+# A mark and a wordmark rather than block-letter ASCII. Big ASCII art depends
+# on a font and a width it cannot check, and reads as a decoration somebody
+# was pleased with. One glyph and the name is what a tool you use every day
+# looks like.
+MARK = "✻"
+
+
+def banner():
+    if not COLOUR:
+        print("SHISHYA — the apprentice\n")
+        return
+    print()
+    print("  " + WARM(MARK) + "  " + BRIGHT("SHISHYA") + "  " + DIM("शिष्य"))
+    print("     " + FAINT("local apprentice · nothing leaves this laptop"))
+    print()
+
+
+# ─── talking to the panel ───────────────────────────────────────────────────
+
+def panel(route, body=None, timeout=25):
+    """Read from the running control panel, or say plainly that it is not up.
+
+    The terminal is useful without it — asking the model and summarising a
+    file need nothing but Ollama — so this never raises. Only the dashboard
+    depends on the panel, and it says so rather than dying.
+    """
+    req = urllib.request.Request(
+        f"{PANEL}/api/{route}",
+        json.dumps(body).encode() if body is not None else None,
+        {"Content-Type": "application/json"} if body is not None else {})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read())
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+
+
+def status_line():
+    bits = []
+    models = brain.resident()
+    if not brain.up():
+        bits.append(BAD("model server down"))
+    elif models:
+        bits.append(DIM("model ") + INK(models[0]) + FAINT(" · warm"))
+    else:
+        bits.append(DIM("model ") + INK(brain.model_for()) + FAINT(" · cold, first answer is slow"))
+
+    st = panel("status", timeout=6)
+    if st is None:
+        bits.append(FAINT("panel not running"))
+    else:
+        vm = (st.get("vm") or {}).get("state", "?")
+        bits.append(DIM("sandbox ") + (INK(vm) if vm == "running" else BAD(vm)))
+        eg = st.get("egress") or {}
+        bits.append(DIM("egress ") + (INK("locked") if eg.get("locked") else BAD("open")))
+    return "  ".join(bits)
+
+
+# ─── the four things ────────────────────────────────────────────────────────
+
+def show_board():
+    d = panel("dashboard")
+    if d is None:
+        print(BAD("  The control panel is not running, so there is no dashboard "
+                  "to read."))
+        print(FAINT("  Start it with:  python3 serve.py 8200"))
+        return
+    money = panel("money") or {}
+
+    print()
+    print("  " + BRIGHT(d.get("greeting", "Welcome,")) + FAINT(
+        f"   {d.get('profile', {}).get('profession', '')}"))
+    print()
+
+    data = d.get("data", {})
+    rows = []
+
+    if "sales" in data:
+        s = data["sales"]
+        rows.append(("Takings", f"₹{s.get('total', 0):,.2f}",
+                     f"last {s.get('days', 0)} days · today ₹{s.get('today', 0):,.2f}"))
+    if "metrics" in data:
+        for m in data["metrics"].get("rows", []):
+            v = f"₹{m['value']:,.2f}" if m.get("money") else f"{m['value']}{m.get('suffix','')}"
+            rows.append((m["label"], v, ""))
+    if "addons" in data:
+        a = data["addons"]
+        rows.append(("Add-ons", f"₹{a.get('total', 0):,.2f}",
+                     f"{a.get('count', 0)} commitments every month"))
+    if "stock" in data:
+        n = data["stock"].get("count", 0)
+        rows.append(("Running out", str(n), "at or below reorder point" if n else "nothing short"))
+    if "waiting" in data:
+        w = data["waiting"]
+        rows.append(("Waiting on you", str((w.get("tasks") or 0) + (w.get("approvals") or 0)),
+                     f"{w.get('tasks',0)} to do · {w.get('approvals',0)} approvals"))
+    cr = (money.get("credit") or {})
+    if cr.get("score"):
+        sc = cr["score"]
+        delta = "" if sc.get("change") is None else f"{sc['change']:+d} since {sc.get('since','')}"
+        rows.append(("Credit score", str(sc["score"]),
+                     f"{sc.get('bureau') or 'bureau'} · {sc.get('at','')} {delta}".strip()))
+
+    label_w = max((len(r[0]) for r in rows), default=10)
+    value_w = max((len(r[1]) for r in rows), default=6)
+    for label, value, note in rows:
+        print(f"  {DIM(label.ljust(label_w))}   {BRIGHT(value.rjust(value_w))}   {FAINT(note)}")
+
+    due = (money.get("addons") or {}).get("due") or []
+    if due:
+        print()
+        print(rule("due this week"))
+        for r in due:
+            print(f"  {INK(r['what'].ljust(label_w))}   "
+                  f"{BRIGHT(('₹%.2f' % r['amount']).rjust(value_w))}   "
+                  f"{FAINT('in %d day(s)' % r['in_days'])}")
+
+    short = (data.get("stock") or {}).get("rows") or []
+    if short:
+        print()
+        print(rule("running out"))
+        for r in short[:6]:
+            print(f"  {INK(str(r['name'])[:label_w].ljust(label_w))}   "
+                  f"{BRIGHT(('%g/%g' % (r['stock'], r['reorder'])).rjust(value_w))}")
+    print()
+
+
+def list_files():
+    """What is already on the laptop and can be summarised without a path."""
+    seen = []
+    for folder in ("work", "inbox", "training"):
+        d = ROOT / "shared" / folder
+        if not d.is_dir():
+            continue
+        for f in sorted(d.iterdir()):
+            if f.is_file() and not f.name.startswith("."):
+                seen.append((folder, f))
+    if not seen:
+        print(FAINT("  Nothing in shared/work, shared/inbox or shared/training."))
+        return []
+    print()
+    for i, (folder, f) in enumerate(seen, 1):
+        size = f.stat().st_size
+        unit = f"{size/1024:.0f}K" if size < 1024**2 else f"{size/1024**2:.1f}M"
+        print(f"  {WARM(str(i).rjust(3))}  {INK(f.name[:46].ljust(46))} "
+              f"{FAINT(unit.rjust(6))}  {FAINT(folder)}")
+    print()
+    print(FAINT("  /sum 3   or   /sum <path>"))
+    return [f for _, f in seen]
+
+
+def typewriter(text):
+    sys.stdout.write(INK(text) if COLOUR else text)
+    sys.stdout.flush()
+
+
+class Thinking:
+    """A live indicator for the reasoning the model does before it answers.
+
+    gpt-oss reasons first and Ollama reports that separately from the answer.
+    Half a minute of nothing while it does so reads as a hang, and this
+    project has already had one thirty-minute silence blamed on everything
+    but the real cause. So the reasoning is shown as it happens — a spinner,
+    a word count, and then the whole line erased the instant real text
+    starts, so the answer is not preceded by the model's working.
+
+    Erased rather than left on screen: reading somebody's train of thought
+    before their answer is interesting once and clutter every time after.
+    """
+
+    FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+    def __init__(self):
+        self.n = 0
+        self.frame = 0
+        self.started = time.time()
+        self.live = False
+
+    def think(self, text):
+        if not COLOUR:
+            return
+        self.n += len(text.split())
+        self.frame = (self.frame + 1) % len(self.FRAMES)
+        sys.stdout.write("\r\033[K  " + WARM(self.FRAMES[self.frame]) + " "
+                         + FAINT(f"thinking · {self.n} words · "
+                                 f"{time.time() - self.started:.0f}s"))
+        sys.stdout.flush()
+        self.live = True
+
+    def clear(self):
+        if self.live:
+            sys.stdout.write("\r\033[K")
+            sys.stdout.flush()
+            self.live = False
+
+    def token(self, text):
+        self.clear()
+        typewriter(text.replace("\n", "\n  "))
+
+
+def do_summarise(target, known):
+    """A number from /files, or any path on this machine."""
+    path = None
+    if str(target).isdigit() and known:
+        i = int(target)
+        if 1 <= i <= len(known):
+            path = known[i - 1]
+    if path is None:
+        path = Path(str(target)).expanduser()
+
+    try:
+        print()
+        print(rule(f"summarising {path.name}"))
+        print()
+        print("  ", end="")
+        started = time.time()
+        spin = Thinking()
+        brain.summarise(path, on_token=spin.token, on_think=spin.think)
+        spin.clear()
+        print("\n")
+        print(FAINT(f"  {time.time() - started:.1f}s"))
+        ledger.record(ledger.INFO, "terminal.summarise", path.name, actor="guru")
+    except (FileNotFoundError, ValueError) as e:
+        print(BAD(f"  {e}"))
+    except Exception as e:                                   # noqa: BLE001
+        print(BAD(f"  {type(e).__name__}: {e}"))
+    print()
+
+
+def do_ask(question):
+    try:
+        print()
+        print("  ", end="")
+        started = time.time()
+        spin = Thinking()
+        brain.stream(question, brain.CHAT_SYSTEM, job="answers", budget=2400,
+                     on_token=spin.token, on_think=spin.think)
+        spin.clear()
+        print("\n")
+        print(FAINT(f"  {time.time() - started:.1f}s"))
+        ledger.record(ledger.INFO, "terminal.ask", question[:70], actor="guru")
+    except urllib.error.URLError:
+        print(BAD("  Cannot reach the model. Is Ollama running on this machine?"))
+    except Exception as e:                                   # noqa: BLE001
+        print(BAD(f"  {type(e).__name__}: {e}"))
+    print()
+
+
+HELP = [
+    ("just type",       "ask it anything"),
+    ("/files",          "what is on the laptop already"),
+    ("/sum N | PATH",   "summarise it"),
+    ("/board",          "the dashboard, as text"),
+    ("/warm",           "load the model now, so the next answer is instant"),
+    ("/clear",          "clear the screen"),
+    ("/help  /quit",    ""),
+]
+
+
+def show_help():
+    print()
+    for cmd, what in HELP:
+        print(f"  {WARM(cmd.ljust(16))} {DIM(what)}")
+    print()
+
+
+# ─── the loop ───────────────────────────────────────────────────────────────
+
+def prompt_box():
+    """The input line, in a box, the way a terminal app that respects you
+    looks. Drawn above the cursor rather than around it — a box you type
+    inside needs raw mode and cursor arithmetic, and gets it wrong the moment
+    the line wraps or the window is resized."""
+    w = width()
+    if not COLOUR:
+        return "> "
+    print(FAINT("╭" + "─" * (w - 2) + "╮"))
+    sys.stdout.write(FAINT("│ ") + WARM("› "))
+    sys.stdout.flush()
+    return ""
+
+
+def repl():
+    banner()
+    print("  " + status_line())
+    print()
+    print(FAINT("  Type a question. ") + WARM("/help") + FAINT(" for commands, ")
+          + WARM("/quit") + FAINT(" to leave."))
+    print()
+
+    known = []
+    while True:
+        try:
+            plain = prompt_box()
+            line = input(plain).strip()
+            if COLOUR:
+                w = width()
+                print(FAINT("╰" + "─" * (w - 2) + "╯"))
+        except (EOFError, KeyboardInterrupt):
+            print("\n" + FAINT("  bye."))
+            return 0
+
+        if not line:
+            continue
+        if line in ("/quit", "/exit", "/q"):
+            print(FAINT("  bye."))
+            return 0
+        if line in ("/help", "/?"):
+            show_help(); continue
+        if line == "/clear":
+            os.system("clear" if os.name != "nt" else "cls"); banner(); continue
+        if line == "/files":
+            known = list_files(); continue
+        if line == "/board":
+            show_board(); continue
+        if line == "/warm":
+            print(FAINT("  loading…"), end=" ", flush=True)
+            t = time.time()
+            brain.stream("", budget=1, on_token=None)
+            print(FAINT(f"ready in {time.time()-t:.1f}s")); print(); continue
+        if line.startswith("/sum"):
+            rest = line[4:].strip()
+            if not rest:
+                print(BAD("  /sum <number from /files, or a path>")); continue
+            do_summarise(rest, known); continue
+        if line.startswith("/"):
+            print(BAD(f"  no such command: {line.split()[0]}")); continue
+
+        do_ask(line)
+
+
+def main(argv):
+    if not argv:
+        return repl()
+    cmd, *rest = argv
+    if cmd in ("board", "dashboard"):
+        show_board(); return 0
+    if cmd in ("sum", "summarise", "summarize"):
+        if not rest:
+            print(BAD("usage: shishya sum FILE")); return 2
+        do_summarise(rest[0], []); return 0
+    if cmd == "ask":
+        if not rest:
+            print(BAD('usage: shishya ask "your question"')); return 2
+        do_ask(" ".join(rest)); return 0
+    if cmd == "files":
+        list_files(); return 0
+    print(__doc__.strip())
+    return 0 if cmd in ("help", "-h", "--help") else 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

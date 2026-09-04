@@ -1306,7 +1306,7 @@ $("profession").onchange = async e => {
 
 const SCREENS = [
   ["s-board", "01", "Dashboard", paintBoard],
-  ["s-shell", "02", "Shell",     null],
+  ["s-shell", "02", "Terminal",  null],
   ["s-ssh",   "03", "SSH",       paintHosts],
   ["s-bank",  "04", "Banking",   paintBank],
   ["s-csma",  "05", "CSMA",      paintCsma],
