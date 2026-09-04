@@ -30,6 +30,11 @@
     <div class="paneHead">
       <span>The clone</span>
       <div class="tools">
+        <!-- Two views of the same pane. The clone's screen is what the sandbox
+             is doing; the dashboard is what it has done. Judges want the
+             second one first and the first one second. -->
+        <button id="tabScreen" class="tool tab on">Screen</button>
+        <button id="tabBoard" class="tool tab">Dashboard</button>
         <button id="btnWheel" class="wheel on">You have control</button>
         <button id="btnReload" class="tool ghost">Reconnect</button>
       </div>
@@ -59,6 +64,92 @@
       <iframe id="vnc" title="clone display" allow="fullscreen"
               src="http://localhost:6080/vnc.html?autoconnect=1&reconnect=1&reconnect_delay=1500&resize=scale&view_only=0&quality=9&compression=2&bell=off"></iframe>
       <div id="screenMsg" class="msg">connecting to the sandbox</div>
+    </div>
+
+    <!-- ─── the apps ────────────────────────────────────────────────────
+         A rail of them down the left, one showing at a time, exactly as in
+         the wireframe. Each is a real screen rather than a tab of one screen:
+         the shell has a session, SSH has a connection, and neither should be
+         torn down because somebody glanced at the numbers. -->
+    <div id="board" class="board" hidden>
+      <nav id="rail" class="rail" aria-label="apps"></nav>
+      <div class="app">
+
+        <!-- 1a — the drawn screen -->
+        <section id="s-board" class="screenBody">
+          <div class="boardHead">
+            <h1 id="hello">Welcome,</h1>
+            <label class="who"><span>Profession</span>
+              <select id="profession"></select></label>
+          </div>
+          <div id="cards" class="cards"></div>
+        </section>
+
+        <!-- 1b — shell -->
+        <section id="s-shell" class="screenBody" hidden>
+          <div class="boardHead"><h1>Shell</h1>
+            <span class="who">runs inside the sandbox, as the clone</span></div>
+          <pre id="shellOut" class="term"></pre>
+          <form id="shellForm" class="entry">
+            <span class="prompt">$</span>
+            <input id="shellIn" autocomplete="off" spellcheck="false"
+                   placeholder="a command, then Enter">
+          </form>
+          <div id="shellHints" class="hints"></div>
+        </section>
+
+        <!-- 1c — SSH -->
+        <section id="s-ssh" class="screenBody" hidden>
+          <div class="boardHead"><h1>SSH</h1>
+            <span id="sshState" class="who">checking</span></div>
+          <div class="split">
+            <div class="hosts">
+              <h2>Hosts <button id="btnSshMode" class="tool ghost">Allow</button></h2>
+              <div id="hostList"></div>
+              <form id="hostForm" class="newHost">
+                <input name="name" placeholder="name">
+                <input name="user" placeholder="user">
+                <input name="host" placeholder="hostname or ip" required>
+                <input name="port" placeholder="22">
+                <input name="key" placeholder="path to key (optional)">
+                <button class="tool">Add host</button>
+              </form>
+              <p class="none">Keys stay where ssh keeps them. Nothing here
+                stores a password or a passphrase.</p>
+            </div>
+            <div class="session">
+              <pre id="sshOut" class="term"></pre>
+              <form id="sshForm" class="entry">
+                <span class="prompt">$</span>
+                <input id="sshIn" autocomplete="off" spellcheck="false"
+                       placeholder="a command to run on the selected host">
+              </form>
+            </div>
+          </div>
+        </section>
+
+        <!-- 1d — banking -->
+        <section id="s-bank" class="screenBody" hidden>
+          <div class="boardHead"><h1>Banking</h1>
+            <span class="who">figures you enter — no bank is connected</span></div>
+          <div id="bankBody"></div>
+        </section>
+
+        <!-- 1e — CSMA -->
+        <section id="s-csma" class="screenBody" hidden>
+          <div class="boardHead"><h1>Credit assistant</h1>
+            <span class="who">CSMA</span></div>
+          <div id="csmaBody"></div>
+        </section>
+
+        <!-- 1f — onboarding -->
+        <section id="s-you" class="screenBody" hidden>
+          <div class="boardHead"><h1>What do you do?</h1>
+            <span class="who">the metrics and modules change by profession</span></div>
+          <div id="youBody"></div>
+        </section>
+
+      </div>
     </div>
   </section>
 

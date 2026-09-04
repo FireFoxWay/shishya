@@ -28,7 +28,10 @@ sys.path.insert(0, os.path.join(ROOT, "host"))
 
 import experiments       # noqa: E402
 import history           # noqa: E402
+import dashboard         # noqa: E402
+import hosts             # noqa: E402
 import ledger            # noqa: E402
+import profile           # noqa: E402
 import secrets as vault  # noqa: E402
 import tasks             # noqa: E402
 import vm                # noqa: E402
@@ -396,6 +399,30 @@ class Handler(SimpleHTTPRequestHandler):
                                           detail=state.get("error"))
             return state
 
+        if route == "dashboard":
+            # One call for the whole overview screen. The panel already makes
+            # ten requests a tick; a dashboard that fetched per card would
+            # have made it eighteen.
+            return dashboard.everything()
+
+        # The Banking and CSMA screens are apps in their own right, not views
+        # of the dashboard. Reading them off /dashboard meant they went blank
+        # for any profession whose card list happened not to include them —
+        # a retail owner opening the credit assistant and being told there was
+        # nothing recorded, when there was.
+        if route == "money":
+            return {"accounts": dashboard.card_commitments(),
+                    "addons": dashboard.card_addons(),
+                    "credit": dashboard.card_credit()}
+
+        if route == "hosts":
+            return {"hosts": hosts.read(), **vm.ssh_state()}
+
+        if route == "profile":
+            return {**profile.read(),
+                    "professions": sorted(profile.PROFESSIONS),
+                    "cards": profile.CARDS}
+
         if route == "schedules":
             return {"schedules": vm.read_schedules(), "role": vm.role()}
         if route == "alerts":
@@ -619,6 +646,54 @@ class Handler(SimpleHTTPRequestHandler):
             # the app's business — it polls for the answer and acts on it,
             # so a decision recorded here can never be a half-finished action.
             return {"decided": decided}
+
+        if route == "hosts/save":
+            try:
+                return {"hosts": hosts.write(body.get("hosts") or [])}
+            except ValueError as e:
+                return {"error": str(e)}
+
+        if route == "ssh":
+            on = bool(body.get("on"))
+            out = vm.ssh_out(on)
+            ledger.record(ledger.ALLOW if out.get("ssh") else ledger.DENY,
+                          "net.ssh", "allowed" if out.get("ssh") else "blocked",
+                          actor="guru", detail=out.get("detail"))
+            return out
+
+        if route == "ssh/run":
+            rows = hosts.read()
+            pick = [r for r in rows if r["name"] == str(body.get("host", ""))]
+            if not pick:
+                return {"error": "no such saved host"}
+            cmd = str(body.get("cmd", "")).strip()
+            if not cmd:
+                return {"error": "nothing to run"}
+            ledger.record(ledger.INFO, "ssh.run", pick[0]["name"], actor="guru",
+                          detail=cmd[:120])
+            try:
+                return vm.ssh_run(pick[0], cmd)
+            except subprocess.TimeoutExpired:
+                return {"code": -1, "out": "", "err": "timed out"}
+
+        if route == "score":
+            money = dashboard._sandbox("money")
+            try:
+                return money.record_score(body.get("score"),
+                                          str(body.get("bureau", "")))
+            except ValueError as e:
+                return {"error": str(e)}
+
+        if route == "profile/set":
+            try:
+                out = profile.write(name=body.get("name"),
+                                    profession=body.get("profession"))
+            except ValueError as e:
+                return {"error": str(e)}
+            ledger.record(ledger.INFO, "profile", out.get("profession", "—"),
+                          actor="guru",
+                          detail=f"name {out.get('name') or '(unset)'}")
+            return out
 
         if route == "role":
             # Not a security boundary and never described as one — the

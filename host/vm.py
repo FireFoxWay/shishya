@@ -955,6 +955,86 @@ def set_browsing(on: bool):
     return result
 
 
+def ssh_out(on: bool):
+    """Let the sandbox open SSH connections, and nothing else new.
+
+    A third state alongside browsing, for the same reason: the claim was never
+    "this can never reach the network", it is "it cannot unless you say so,
+    and when you do it is in the log". Browsing opens 80 and 443. This opens
+    22. Neither opens the other.
+
+    Worth being plain about the cost. With this on, the sandbox can reach a
+    machine you own and, through it, whatever that machine can reach. That is
+    what SSH is for and it is also the whole of the risk — so it is a switch
+    somebody throws deliberately, per session, with the ledger recording it.
+    """
+    if not on:
+        return egress(True)
+    rules = [
+        "nft flush ruleset",
+        "nft add table inet shishya",
+        "nft add chain inet shishya out "
+        "'{ type filter hook output priority 0; policy drop; }'",
+        "nft add rule inet shishya out ct state established,related accept",
+        "nft add rule inet shishya out oifname lo accept",
+        f"nft add rule inet shishya out ip daddr {HOST_IP} "
+        f"tcp dport {OLLAMA_PORT} accept",
+        "nft add rule inet shishya out udp dport 53 accept",
+        "nft add rule inet shishya out tcp dport 53 accept",
+        "nft add rule inet shishya out tcp dport 22 accept",
+    ]
+    p = subprocess.run(
+        ["limactl", "shell", "--workdir", "/", NAME, "--",
+         "sudo", "bash", "-lc", "\n".join(rules)],
+        capture_output=True, text=True, encoding="utf-8", timeout=60)
+    if p.returncode != 0:
+        raise VMError(p.stderr.strip())
+    _forget_rules()
+    return ssh_state(fresh=True)
+
+
+def ssh_state(fresh=False):
+    """Measured from the guest, like every other claim about the lock."""
+    ok, text = _rules(fresh)
+    if not ok:
+        return {"ssh": False, "detail": "no rules loaded — the sandbox is wide open"}
+    out = "dport 22" in text
+    return {"ssh": out,
+            "detail": "the sandbox can open SSH connections" if out
+                      else "SSH out of the sandbox is blocked"}
+
+
+def ssh_run(row, command, timeout=45):
+    """Run one command on a saved host, from inside the sandbox.
+
+    From inside deliberately. Doing it on the Mac would be simpler and would
+    also mean the panel reaching onto your real network from outside the box
+    that is supposed to contain everything, which is the one thing this
+    project argues against.
+
+    Not a terminal: no pty, so no interactive programs, no password prompt
+    (BatchMode is on), and no `cd` that survives to the next command. The same
+    shape as run_command, and honest about it for the same reason.
+    """
+    import shlex
+
+    import hosts
+    if not ssh_state()["ssh"]:
+        return {"code": -1, "out": "",
+                "err": "SSH out of the sandbox is switched off. Turn it on "
+                       "first — it is a deliberate hole in the egress lock, "
+                       "and switching it on is recorded in the ledger."}
+    remote = " ".join(shlex.quote(a) for a in hosts.target(row))
+    p = subprocess.run(
+        ["limactl", "shell", "--workdir", "/", NAME, "--",
+         "sudo", "-u", "clone", "bash", "-lc",
+         f"{remote} {shlex.quote(command)}"],
+        capture_output=True, text=True, encoding="utf-8", timeout=timeout)
+    return {"code": p.returncode,
+            "out": (p.stdout or "").rstrip()[-8000:],
+            "err": (p.stderr or "").rstrip()[-4000:]}
+
+
 def browsing_state(fresh=False):
     """Measured, like everything else about the lock — off the same one read
     of the table that egress_state() uses, rather than a second ssh session

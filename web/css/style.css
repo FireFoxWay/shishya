@@ -563,3 +563,179 @@ body {
   .pane.col { width: auto; border-left: none; border-top: 1px solid var(--line); }
   #stage::after, #stage::before { display: none; }
 }
+
+/* ─── the dashboard ───────────────────────────────────────────────────────
+   Same pane as the clone's screen, one or the other showing. Monochrome like
+   everything else here: emphasis is inversion and weight, never colour, so a
+   chart cannot say anything the rest of the panel cannot. */
+
+/* A sibling of .screen, not a child of it: exactly one of the two is in the
+   layout at a time. The first version laid the board over the screen with
+   position:absolute — and .screen is a sibling rather than an ancestor, so
+   "inset: 0" resolved against the viewport and the cards landed across the
+   whole window with the clone's wallpaper showing through them. */
+.board {
+  flex: 1; min-height: 0; display: flex;
+  border: 1px solid var(--ink); background: var(--paper);
+}
+/* The rail. Numbered rather than iconographic: an icon set invented for six
+   screens teaches nobody anything, and the number is also the keyboard hint. */
+.rail {
+  width: 52px; flex-shrink: 0;
+  border-right: 1px solid var(--line);
+  display: flex; flex-direction: column; gap: 4px; padding: 10px 8px;
+}
+.rail button {
+  appearance: none; font-family: inherit; cursor: pointer;
+  height: 36px; border: 1px solid var(--line); background: transparent;
+  color: var(--ink-3); border-radius: 0;
+  font-size: 9px; letter-spacing: .08em; text-transform: uppercase;
+  display: flex; align-items: center; justify-content: center;
+}
+.rail button:hover { color: var(--ink); border-color: var(--ink-3); }
+.rail button.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.rail .spacer { flex: 1; border: 0; pointer-events: none; }
+
+.app { flex: 1; min-width: 0; display: flex; }
+.screenBody {
+  flex: 1; min-width: 0; display: flex; flex-direction: column;
+  overflow-y: auto; overscroll-behavior: contain;
+  padding: 18px 20px 24px;
+  scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+}
+.boardHead {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 16px; margin-bottom: 20px;
+  border-bottom: 1px solid var(--line); padding-bottom: 14px;
+}
+.boardHead h1 { font-size: 21px; font-weight: 500; letter-spacing: -.01em; margin: 0; }
+.who { display: flex; align-items: center; gap: 8px;
+       font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase;
+       color: var(--ink-3); }
+.who select {
+  appearance: none; font-family: inherit; font-size: 9.5px;
+  letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink); background: transparent;
+  border: 1px solid var(--line); border-radius: 0;
+  padding: 5px 8px; cursor: pointer;
+}
+
+.cards { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(255px, 1fr)); }
+/* The line chart earns two columns where there is room. A fortnight of daily
+   takings squeezed into a card the width of a list is a scribble. */
+.card.wide { grid-column: span 2; }
+@media (max-width: 900px) { .card.wide { grid-column: span 1; } }
+
+.card {
+  border: 1px solid var(--line); padding: 14px 15px 15px;
+  display: flex; flex-direction: column; min-height: 0;
+}
+.card h2 {
+  font-size: 9px; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--ink-3); font-weight: 500; margin: 0 0 10px;
+  display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+}
+.card h2 b { color: var(--ink); font-weight: 500; letter-spacing: .04em;
+             font-size: 15px; text-transform: none; }
+.card .none { color: var(--ink-4); font-size: 11px; padding: 6px 0; }
+
+/* figures */
+.fig { display: flex; justify-content: space-between; align-items: baseline;
+       gap: 12px; padding: 5px 0; border-bottom: 1px solid var(--line); }
+.fig:last-child { border-bottom: 0; }
+.fig span { font-size: 11px; color: var(--ink-2); }
+.fig b { font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; }
+
+/* Bad news is inverted rather than red — the panel has no colour to spend and
+   a shopkeeper reading this in sunlight gets contrast, not hue. */
+.fig.warn b, .note.watch { background: var(--ink); color: var(--paper); padding: 1px 5px; }
+.note { font-size: 11px; line-height: 1.5; padding: 5px 0; color: var(--ink-2); }
+.note.watch { display: inline-block; margin: 3px 0; }
+
+.spark { width: 100%; height: 92px; display: block; }
+.spark .line { fill: none; stroke: var(--ink); stroke-width: 1.5; }
+.spark .area { fill: var(--ink); opacity: .07; }
+.spark .base { stroke: var(--line); stroke-width: 1; }
+.spark .dot  { fill: var(--ink); }
+.ring { width: 108px; height: 108px; flex-shrink: 0; }
+.ring circle { fill: none; stroke-width: 13; }
+.donut { display: flex; gap: 14px; align-items: center; }
+.keys { flex: 1; min-width: 0; }
+.key { display: flex; align-items: center; gap: 7px; font-size: 10.5px;
+       padding: 2px 0; color: var(--ink-2); }
+.key i { width: 9px; height: 9px; flex-shrink: 0; background: var(--ink); }
+.key span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.key b { font-weight: 500; font-variant-numeric: tabular-nums; color: var(--ink); }
+
+.tab.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+
+/* ─── shell and ssh ─────────────────────────────────────────────────────── */
+.term {
+  flex: 1; min-height: 140px; margin: 0; overflow-y: auto;
+  border: 1px solid var(--line); padding: 10px 12px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11.5px; line-height: 1.55; white-space: pre-wrap; word-break: break-word;
+  color: var(--ink-2); background: transparent;
+}
+.term b { color: var(--ink); font-weight: 500; }
+.term i { color: var(--ink-4); font-style: normal; }
+.entry { display: flex; align-items: center; gap: 8px; margin-top: 8px;
+         border: 1px solid var(--line); padding: 7px 10px; }
+.entry .prompt { color: var(--ink-3);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; }
+.entry input {
+  flex: 1; appearance: none; border: 0; background: transparent; outline: none;
+  color: var(--ink); font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+}
+.hints { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.hints button {
+  appearance: none; cursor: pointer; border: 1px solid var(--line);
+  background: transparent; color: var(--ink-3); border-radius: 0;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 10.5px;
+  padding: 4px 8px;
+}
+.hints button:hover { color: var(--ink); border-color: var(--ink-3); }
+
+.split { flex: 1; min-height: 0; display: grid; grid-template-columns: 230px 1fr; gap: 14px; }
+.hosts { display: flex; flex-direction: column; gap: 8px; min-width: 0;
+         border-right: 1px solid var(--line); padding-right: 14px; }
+.hosts h2 { font-size: 9px; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--ink-3); font-weight: 500; margin: 0 0 4px;
+  display: flex; justify-content: space-between; align-items: center; }
+.host { text-align: left; appearance: none; cursor: pointer; border-radius: 0;
+  border: 1px solid var(--line); background: transparent; color: var(--ink-2);
+  padding: 7px 9px; font-family: inherit; font-size: 11px; }
+.host.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.host small { display: block; opacity: .65; font-size: 10px; }
+.newHost { display: flex; flex-direction: column; gap: 5px; margin-top: 4px; }
+.newHost input { appearance: none; border: 1px solid var(--line); border-radius: 0;
+  background: transparent; color: var(--ink); font-family: inherit;
+  font-size: 11px; padding: 5px 7px; outline: none; }
+.session { display: flex; flex-direction: column; min-width: 0; }
+
+/* ─── the gauge ─────────────────────────────────────────────────────────── */
+.gauge { width: 170px; height: 104px; display: block; }
+.gauge .track { fill: none; stroke: var(--line); stroke-width: 13; }
+.gauge .fill  { fill: none; stroke: var(--ink);  stroke-width: 13; }
+.score { text-align: center; margin-top: -14px; }
+.score b { display: block; font-size: 30px; font-weight: 500;
+           font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.score span { font-size: 10px; color: var(--ink-3); }
+.pick { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr));
+        gap: 10px; margin: 4px 0 16px; }
+.pick button { appearance: none; cursor: pointer; border-radius: 0;
+  border: 1px solid var(--line); background: transparent; color: var(--ink);
+  font-family: inherit; font-size: 13px; padding: 16px 12px; text-transform: capitalize; }
+.pick button.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.todo { display: flex; align-items: flex-start; gap: 9px; padding: 7px 0;
+        border-bottom: 1px solid var(--line); font-size: 11.5px; color: var(--ink-2); }
+.todo:last-child { border-bottom: 0; }
+
+/* The `hidden` attribute is styled by the browser as `[hidden]{display:none}`
+   in its own stylesheet, which any author rule outranks. .board and
+   .screenBody both set `display: flex`, so every screen stayed on the page
+   and the six of them tiled side by side — the markup said hidden and the
+   layout disagreed. Author-level, and !important so a future display rule
+   cannot quietly win the same argument again. */
+[hidden] { display: none !important; }

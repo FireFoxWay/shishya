@@ -28,6 +28,20 @@ async function upload(file) {
 }
 
 export const api = {
+  /* The overview screen, assembled host-side in one call. Eight cards fetched
+     separately would have taken the panel's per-tick request count from ten
+     to eighteen, and the cost of that polling was worth cutting rather than
+     repeating. */
+  dashboard: () => call("dashboard"),
+  profile: () => call("profile"),
+  money: () => call("money"),
+  hosts: () => call("hosts"),
+  saveHosts: (rows) => call("hosts/save", { hosts: rows }),
+  sshMode: (on) => call("ssh", { on }),
+  sshRun: (host, cmd) => call("ssh/run", { host, cmd }),
+  recordScore: (score, bureau) => call("score", { score, bureau }),
+  setProfile: (patch) => call("profile/set", patch),
+
   upload,
   inbox:    ()      => call("inbox"),
   launch:   (app)   => call("launch", { app }),

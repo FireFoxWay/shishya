@@ -136,6 +136,10 @@ async function refresh() {
     }
     const n = box.waiting.length;
     $("inboxCount").textContent = n ? `${n} waiting` : "empty";
+    // Only when it is the visible half of the pane. Assembling the dashboard
+    // reads the books and the catalogue, and doing that every three seconds
+    // for a view nobody has open is the same mistake the wallpaper was.
+    if (!$("board").hidden) paintBoard();
   } catch (e) {
     $("vmState").textContent = "HOST DOWN";
     $("vmState").className = "no";
@@ -1047,3 +1051,606 @@ api.jobProgress().then(p => {
   if (p.state === "working" || p.state === "starting") watchJob();
 }).catch(() => {});
 log("control panel up — you have the wheel");
+
+/* ─── the dashboard ────────────────────────────────────────────────────────
+   The overview screen. Everything on it already existed and was scattered
+   across Billing, Reports, Alerts and this panel's own right-hand column;
+   what was missing was somewhere to see it at once.
+
+   Which cards appear is decided by the profession on the host, not here — a
+   shopkeeper opens onto takings and stock, someone managing their own money
+   opens onto what is owed. Drawing is generic; the choosing is not this
+   file's business.
+
+   Charts are inline SVG. A library would be the only build step in the
+   project and the only dependency that has to resolve at a demo table, to
+   draw one line and one ring. */
+
+const money = n => "₹" + Number(n || 0).toLocaleString("en-IN",
+  { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const el = (tag, cls, text) => {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
+};
+
+function card(title, big) {
+  const c = el("div", "card");
+  const h = el("h2");
+  h.append(el("span", null, title));
+  if (big !== undefined) h.append(el("b", null, big));
+  c.append(h);
+  return c;
+}
+
+/* A line, its area, and a dot on the last point. Written against the box the
+   card actually gives it rather than a fixed size, so it stays a chart when
+   the pane is narrow instead of overflowing it. */
+function sparkline(points) {
+  const W = 320, H = 92, pad = 6;
+  const vals = points.map(p => p.amount);
+  const top = Math.max(...vals, 1);
+  const x = i => pad + (i * (W - pad * 2)) / Math.max(points.length - 1, 1);
+  const y = v => H - pad - (v / top) * (H - pad * 2);
+  const line = points.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.amount).toFixed(1)}`).join("");
+
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "spark");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("preserveAspectRatio", "none");
+  const add = (name, attrs) => {
+    const n = document.createElementNS("http://www.w3.org/2000/svg", name);
+    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+    svg.append(n);
+    return n;
+  };
+  add("path", { class: "area", d: `${line}L${x(points.length - 1)},${H - pad}L${x(0)},${H - pad}Z` });
+  add("line", { class: "base", x1: pad, y1: H - pad, x2: W - pad, y2: H - pad });
+  add("path", { class: "line", d: line });
+  const last = points[points.length - 1];
+  if (last) add("circle", { class: "dot", cx: x(points.length - 1), cy: y(last.amount), r: 2.6 });
+  return svg;
+}
+
+/* A ring rather than a pie: the slices are drawn as dashes around one circle,
+   which needs no arc maths and cannot produce a malformed path when a slice
+   rounds to zero. Shade rather than colour, for the same reason as the CSS. */
+function donut(slices, total) {
+  const R = 46, C = 2 * Math.PI * R;
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "ring");
+  svg.setAttribute("viewBox", "0 0 120 120");
+  let at = 0;
+  slices.forEach((s, i) => {
+    const frac = total ? s.amount / total : 0;
+    const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    c.setAttribute("cx", 60); c.setAttribute("cy", 60); c.setAttribute("r", R);
+    c.setAttribute("stroke", "var(--ink)");
+    c.setAttribute("stroke-opacity", (1 - i * 0.13).toFixed(2));
+    c.setAttribute("stroke-dasharray", `${(frac * C).toFixed(2)} ${C.toFixed(2)}`);
+    c.setAttribute("stroke-dashoffset", (-at * C).toFixed(2));
+    c.setAttribute("transform", "rotate(-90 60 60)");
+    svg.append(c);
+    at += frac;
+  });
+  return svg;
+}
+
+const DRAW = {
+  sales(d) {
+    const c = card(`Sales · last ${d.days} days`, money(d.total));
+    c.classList.add("wide");
+    if (!d.points?.length) { c.append(el("p", "none", "No sales recorded yet.")); return c; }
+    c.append(sparkline(d.points));
+    const f = el("div", "fig");
+    f.append(el("span", null, "Today"), el("b", null, money(d.today)));
+    c.append(f);
+    return c;
+  },
+
+  /* "Add-ons card = all the commitments you have (loans, EMIs,
+     subscriptions)." Most people can name three of theirs; the total is
+     what is worth drawing, and it is nearly always bigger than the guess. */
+  addons(d) {
+    const c = card("Add-ons · every month", money(d.total));
+    if (!d.slices?.length) {
+      c.append(el("p", "none", "Nothing recorded. Add loans, EMIs and " +
+                               "subscriptions in Banking."));
+      return c;
+    }
+    const wrap = el("div", "donut");
+    wrap.append(donut(d.slices, d.total));
+    const keys = el("div", "keys");
+    d.slices.forEach((s, i) => {
+      const k = el("div", "key");
+      const swatch = el("i");
+      swatch.style.opacity = (1 - i * 0.13).toFixed(2);
+      k.append(swatch, el("span", null, s.name), el("b", null, money(s.amount)));
+      keys.append(k);
+    });
+    wrap.append(keys);
+    c.append(wrap);
+    (d.due || []).forEach(r => {
+      const f = el("div", "fig warn");
+      f.append(el("span", null, `${r.what} · in ${r.in_days}d`),
+               el("b", null, money(r.amount)));
+      c.append(f);
+    });
+    return c;
+  },
+
+  metrics(d) {
+    const c = card("Top metrics");
+    (d.rows || []).forEach(r => {
+      const f = el("div", "fig");
+      const v = r.money ? money(r.value) : `${r.value}${r.suffix || ""}`;
+      f.append(el("span", null, r.label), el("b", null, v));
+      c.append(f);
+    });
+    return c;
+  },
+
+  stock(d) {
+    const c = card("Running out", d.count ?? 0);
+    if (!d.rows?.length) { c.append(el("p", "none", "Nothing below its reorder point.")); return c; }
+    d.rows.forEach(r => {
+      const f = el("div", "fig warn");
+      f.append(el("span", null, r.name), el("b", null, `${r.stock} / ${r.reorder}`));
+      c.append(f);
+    });
+    return c;
+  },
+
+  /* "Shows all the commitments you have" — the arrow in the sketch. Most
+     people can name three and are surprised by the total, which is the
+     entire reason this card is worth drawing. */
+  commitments(d) {
+    const c = card("Commitments · every month", money(d.monthly));
+    const p = d.position || {};
+    [["Have", p.have], ["Owe", p.owe], ["Net", p.net]].forEach(([label, v]) => {
+      if (v === undefined) return;
+      const f = el("div", "fig");
+      f.append(el("span", null, label), el("b", null, money(v)));
+      c.append(f);
+    });
+    if (d.due?.length) {
+      c.append(el("p", "note", "Due within the week"));
+      d.due.forEach(r => {
+        const f = el("div", "fig warn");
+        f.append(el("span", null, `${r.what} · in ${r.in_days}d`),
+                 el("b", null, money(r.amount)));
+        c.append(f);
+      });
+    } else {
+      c.append(el("p", "none", "Nothing due in the next seven days."));
+    }
+    return c;
+  },
+
+  credit(d) {
+    const c = card("Credit standing",
+                   d.utilisation === null || d.utilisation === undefined
+                     ? "—" : `${d.utilisation}%`);
+    if (!d.standing?.length) { c.append(el("p", "none", "Add an account to see this.")); return c; }
+    d.standing.forEach(n => c.append(el("p", `note ${n.level}`, n.text)));
+    c.append(el("p", "note", "What it is made of:"));
+    (d.factors || []).forEach(f => {
+      const row = el("div", "fig");
+      row.append(el("span", null, f.name), el("b", null, `${f.weight}%`));
+      c.append(row);
+    });
+    return c;
+  },
+
+  waiting(d) {
+    const c = card("Waiting on you", (d.tasks || 0) + (d.approvals || 0));
+    [["To do", d.tasks], ["Approvals", d.approvals]].forEach(([label, v]) => {
+      const f = el("div", "fig");
+      f.append(el("span", null, label), el("b", null, v ?? 0));
+      c.append(f);
+    });
+    return c;
+  },
+
+  shell(d) {
+    const c = card("Shell");
+    c.append(el("p", "note", d.hint || ""));
+    return c;
+  },
+};
+
+async function paintBoard() {
+  let d;
+  try { d = await api.dashboard(); }
+  catch (e) { $("cards").replaceChildren(el("p", "none", `Dashboard unavailable — ${e.message}`)); return; }
+
+  $("hello").textContent = d.greeting;
+
+  const pick = $("profession");
+  if (pick.options.length !== d.professions.length) {
+    pick.replaceChildren(...d.professions.map(p => new Option(p, p)));
+  }
+  pick.value = d.profile.profession;
+
+  const box = $("cards");
+  box.replaceChildren();
+  for (const name of d.cards) {
+    const data = d.data[name] || {};
+    const draw = DRAW[name];
+    if (!draw) continue;
+    if (data.error) {
+      // One card that cannot be drawn must not take the dashboard with it.
+      const c = card(d.titles[name] || name);
+      c.append(el("p", "none", data.error));
+      box.append(c);
+      continue;
+    }
+    try { box.append(draw(data)); }
+    catch (e) { const c = card(name); c.append(el("p", "none", e.message)); box.append(c); }
+  }
+}
+
+$("profession").onchange = async e => {
+  await api.setProfile({ profession: e.target.value });
+  log(`dashboard is now a ${e.target.value}'s`);
+  paintBoard();
+};
+
+/* ─── the rail ─────────────────────────────────────────────────────────────
+   Six screens, one showing. The VNC iframe keeps its connection while hidden
+   and so does everything else here — tearing a screen down and rebuilding it
+   on every press would mean the shell losing its scrollback and the SSH pane
+   losing which host was selected, every time somebody glanced at the numbers. */
+
+const SCREENS = [
+  ["s-board", "01", "Dashboard", paintBoard],
+  ["s-shell", "02", "Shell",     null],
+  ["s-ssh",   "03", "SSH",       paintHosts],
+  ["s-bank",  "04", "Banking",   paintBank],
+  ["s-csma",  "05", "CSMA",      paintCsma],
+  ["s-you",   "06", "You",       paintYou],
+];
+let screenNow = "s-board";
+
+function buildRail() {
+  const rail = $("rail");
+  rail.replaceChildren();
+  SCREENS.forEach(([id, num, label], i) => {
+    if (i === SCREENS.length - 1) rail.append(el("div", "spacer"));
+    const b = el("button", null, num);
+    b.title = label;
+    b.setAttribute("aria-label", label);
+    b.onclick = () => showScreen(id);
+    b.dataset.for = id;
+    rail.append(b);
+  });
+}
+
+/* Buttons carry their target in a data attribute rather than being found by
+   position — the rail has a spacer in it, so counting children reached the
+   wrong screen. */
+function railButton(id) {
+  return $("rail").querySelector(`button[data-for="${id}"]`);
+}
+
+function showScreen(id) {
+  screenNow = id;
+  for (const [sid, , , paint] of SCREENS) {
+    const on = sid === id;
+    $(sid).hidden = !on;
+    if (on && paint) paint();
+  }
+  for (const b of $("rail").querySelectorAll("button[data-for]"))
+    b.classList.toggle("on", b.dataset.for === id);
+}
+
+/* Two views of the pane: the clone's screen, and the apps. */
+function showBoard(on) {
+  $("board").hidden = !on;
+  document.querySelector(".screen").hidden = on;
+  $("tabBoard").classList.toggle("on", on);
+  $("tabScreen").classList.toggle("on", !on);
+  $("btnWheel").hidden = on;
+  $("btnReload").hidden = on;
+  if (on) showScreen(screenNow);
+}
+
+$("tabBoard").onclick = () => showBoard(true);
+$("tabScreen").onclick = () => showBoard(false);
+
+/* ─── 02 · shell ───────────────────────────────────────────────────────────
+   The host end has no pty, so this is not a terminal and does not pretend to
+   be one: no interactive programs, and no `cd` that survives to the next
+   command. Saying so in the pane beats letting somebody discover it by
+   typing `cd` and watching nothing happen. */
+
+const HINTS = ["ls ~/shared/work", "df -h", "free -m", "ps -eo pcpu,comm --sort=-pcpu | head",
+               "cat ~/shared/billing/shop.txt", "uptime"];
+
+function termLine(box, text, cls) {
+  const n = el(cls || "span", null, text + "\n");
+  box.append(n);
+  box.scrollTop = box.scrollHeight;
+}
+
+async function runShell(cmd) {
+  const box = $("shellOut");
+  termLine(box, "$ " + cmd, "b");
+  try {
+    const r = await api.shell(cmd);
+    if (r.out) termLine(box, r.out);
+    if (r.err) termLine(box, r.err, "i");
+    if (!r.out && !r.err) termLine(box, `(no output, exit ${r.code})`, "i");
+  } catch (e) { termLine(box, e.message, "i"); }
+}
+
+$("shellForm").onsubmit = e => {
+  e.preventDefault();
+  const cmd = $("shellIn").value.trim();
+  if (!cmd) return;
+  $("shellIn").value = "";
+  runShell(cmd);
+};
+
+(function seedShell() {
+  const box = $("shellOut");
+  termLine(box, "Runs inside the sandbox as the clone — no sudo, no network.", "i");
+  termLine(box, "No pty, so no interactive programs and no cd that survives.", "i");
+  const hints = $("shellHints");
+  HINTS.forEach(h => {
+    const b = el("button", null, h);
+    b.onclick = () => runShell(h);
+    hints.append(b);
+  });
+})();
+
+/* ─── 03 · ssh ─────────────────────────────────────────────────────────────
+   The sandbox has no network. Reaching a host means opening port 22 in the
+   egress lock, which is a deliberate decision and is logged as one — so the
+   button says Allow rather than Connect, and says what it is allowing. */
+
+let hostRows = [], hostPick = null, sshAllowed = false;
+
+async function paintHosts() {
+  let d;
+  try { d = await api.hosts(); } catch (e) { return; }
+  hostRows = d.hosts || [];
+  sshAllowed = !!d.ssh;
+  $("sshState").textContent = d.detail || "";
+  $("btnSshMode").textContent = sshAllowed ? "Block again" : "Allow";
+  $("btnSshMode").classList.toggle("on", sshAllowed);
+
+  const list = $("hostList");
+  list.replaceChildren();
+  if (!hostRows.length) list.append(el("p", "none", "No hosts saved."));
+  hostRows.forEach(h => {
+    const b = el("button", "host");
+    b.append(el("span", null, h.name));
+    b.append(el("small", null, `${h.user ? h.user + "@" : ""}${h.host}:${h.port}`));
+    b.classList.toggle("on", hostPick === h.name);
+    b.onclick = () => { hostPick = h.name; paintHosts(); };
+    list.append(b);
+  });
+}
+
+$("btnSshMode").onclick = async () => {
+  const want = !sshAllowed;
+  if (want && !confirm(
+      "Allow the sandbox to open SSH connections?\n\n" +
+      "It will then be able to reach a machine you own, and through it " +
+      "whatever that machine can reach. This is recorded in the ledger.")) return;
+  try {
+    const out = await api.sshMode(want);
+    log(out.detail, out.ssh ? "no" : "ok");
+    paintHosts();
+  } catch (e) { log(e.message, "no"); }
+};
+
+$("hostForm").onsubmit = async e => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const row = Object.fromEntries([...f.entries()].map(([k, v]) => [k, String(v).trim()]));
+  if (!row.host) return;
+  try {
+    await api.saveHosts([...hostRows, row]);
+    e.target.reset();
+    paintHosts();
+  } catch (err) { log(err.message, "no"); }
+};
+
+$("sshForm").onsubmit = async e => {
+  e.preventDefault();
+  const cmd = $("sshIn").value.trim();
+  const box = $("sshOut");
+  if (!cmd) return;
+  if (!hostPick) { termLine(box, "Pick a host on the left first.", "i"); return; }
+  $("sshIn").value = "";
+  termLine(box, `${hostPick} $ ${cmd}`, "b");
+  try {
+    const r = await api.sshRun(hostPick, cmd);
+    if (r.out) termLine(box, r.out);
+    if (r.err) termLine(box, r.err, "i");
+  } catch (err) { termLine(box, err.message, "i"); }
+};
+
+/* ─── 04 · banking ─────────────────────────────────────────────────────────
+   Accounts you entered. There is no "link account" here and there will not
+   be: linking means holding a banking credential, and the sandbox has no
+   network to use one over even if it were wise to keep one. */
+
+async function paintBank() {
+  const box = $("bankBody");
+  let d;
+  try { d = (await api.money()).addons || {}; }
+  catch (e) { box.replaceChildren(el("p", "none", e.message)); return; }
+  box.replaceChildren();
+
+  const cards = el("div", "cards");
+  const p = d.position || {};
+  const summary = card("Position", money(p.net));
+  [["Have", p.have], ["Owe", p.owe]].forEach(([l, v]) => {
+    const f = el("div", "fig");
+    f.append(el("span", null, l), el("b", null, money(v)));
+    summary.append(f);
+  });
+  cards.append(summary);
+
+  const out = card("Commitments this month", money(d.total));
+  (d.slices || []).forEach(sl => {
+    const f = el("div", "fig");
+    f.append(el("span", null, sl.name), el("b", null, money(sl.amount)));
+    out.append(f);
+  });
+  if (!d.slices?.length) out.append(el("p", "none", "Nothing recorded yet."));
+  out.append(el("p", "note", "Feeds the Add-ons card on the dashboard."));
+  cards.append(out);
+  box.append(cards);
+
+  box.append(el("p", "note",
+    "Accounts and commitments are edited in the Banking app inside the " +
+    "sandbox. This app has no connection to any bank and no field that would " +
+    "take a password, a PIN or an OTP — the sandbox has no network to send " +
+    "one over."));
+}
+
+/* ─── 05 · CSMA ────────────────────────────────────────────────────────────
+   The gauge shows the score your bureau told you, on the day it told you,
+   and the change since the reading before. It is not computed here. No
+   formula outside a bureau produces somebody's score, and one invented here
+   would be believed precisely because it sat next to real arithmetic. */
+
+function gauge(score) {
+  const R = 62, C = Math.PI * R;                 // half a circle
+  const frac = Math.max(0, Math.min(1, (score - 300) / 600));
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "gauge");
+  svg.setAttribute("viewBox", "0 0 160 92");
+  const arc = (cls, len) => {
+    const n = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    n.setAttribute("class", cls);
+    n.setAttribute("d", `M18,80 A${R},${R} 0 0 1 142,80`);
+    n.setAttribute("stroke-linecap", "round");
+    if (len !== undefined) n.setAttribute("stroke-dasharray", `${len} ${C}`);
+    svg.append(n);
+  };
+  arc("track");
+  arc("fill", (frac * C).toFixed(1));
+  return svg;
+}
+
+async function paintCsma() {
+  const box = $("csmaBody");
+  let d;
+  try { d = (await api.money()).credit || {}; }
+  catch (e) { box.replaceChildren(el("p", "none", e.message)); return; }
+  box.replaceChildren();
+
+  const cards = el("div", "cards");
+  const left = card("Your recorded score");
+  const sc = d.score;
+  if (sc) {
+    left.append(gauge(sc.score));
+    const box2 = el("div", "score");
+    box2.append(el("b", null, sc.score));
+    const delta = sc.change === null || sc.change === undefined ? ""
+      : `${sc.change >= 0 ? "+" : ""}${sc.change} since ${sc.since}`;
+    box2.append(el("span", null, `${sc.bureau || "bureau"} · ${sc.at}${delta ? " · " + delta : ""}`));
+    left.append(box2);
+  } else {
+    left.append(el("p", "none", "Nothing recorded yet. Enter the score your " +
+                                 "bureau gave you and this will track it."));
+  }
+  const form = el("form", "entry");
+  const input = el("input");
+  input.placeholder = "score from your bureau, 300–900";
+  input.inputMode = "numeric";
+  form.append(el("span", "prompt", "#"), input);
+  form.onsubmit = async e => {
+    e.preventDefault();
+    try { await api.recordScore(input.value, "bureau"); input.value = ""; paintCsma(); }
+    catch (err) { log(err.message, "no"); }
+  };
+  left.append(form);
+  left.append(el("p", "note",
+    "Not computed here, and not a prediction. Only a bureau produces your " +
+    "score, from data this machine has never seen."));
+  cards.append(left);
+
+  const factors = card("Factors",
+    d.utilisation === null || d.utilisation === undefined ? "—" : `${d.utilisation}%`);
+  (d.factors || []).forEach(f => {
+    const r = el("div", "fig");
+    r.append(el("span", null, f.name), el("b", null, `${f.weight}%`));
+    factors.append(r);
+  });
+  cards.append(factors);
+
+  const next = card("Next actions");
+  if (!d.standing?.length) next.append(el("p", "none", "Add your accounts first."));
+  (d.standing || []).forEach(n => {
+    const row = el("div", "todo");
+    row.append(el("span", null, n.level === "watch" ? "!" : "·"), el("span", null, n.text));
+    next.append(row);
+  });
+  next.append(el("p", "note",
+    "Observations on figures you entered, plus the published breakdown of " +
+    "what a score is made of. Not financial advice — that needs somebody " +
+    "licensed to give it."));
+  cards.append(next);
+
+  box.append(cards);
+}
+
+/* ─── 06 · you ─────────────────────────────────────────────────────────── */
+
+async function paintYou() {
+  const box = $("youBody");
+  let d;
+  try { d = await api.dashboard(); } catch (e) { return; }
+  box.replaceChildren();
+
+  const pick = el("div", "pick");
+  d.professions.forEach(name => {
+    const b = el("button", null, name);
+    b.classList.toggle("on", name === d.profile.profession);
+    b.onclick = async () => {
+      await api.setProfile({ profession: name });
+      log(`dashboard is now a ${name}'s`);
+      paintYou();
+    };
+    pick.append(b);
+  });
+  box.append(pick);
+
+  const got = card("You'll get");
+  (d.cards || []).forEach(name => {
+    const f = el("div", "fig");
+    f.append(el("span", null, d.titles[name] || name),
+             el("b", null, (d.about || {})[name] ? "" : ""));
+    const note = el("p", "note", (d.about || {})[name] || "");
+    got.append(f);
+    if (note.textContent) got.append(note);
+  });
+  box.append(got);
+
+  const named = card("Your name");
+  const form = el("form", "entry");
+  const input = el("input");
+  input.placeholder = "what the dashboard should call you";
+  input.value = d.profile.name || "";
+  form.append(el("span", "prompt", "@"), input);
+  form.onsubmit = async e => {
+    e.preventDefault();
+    await api.setProfile({ name: input.value });
+    paintYou();
+  };
+  named.append(form);
+  box.append(named);
+}
+
+buildRail();
+// Establish the initial state explicitly rather than relying on the markup's
+// attributes surviving the stylesheet.
+showBoard(false);

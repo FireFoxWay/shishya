@@ -41,3 +41,10 @@ shared/.role
 shared/.state
 shared/.browsing
 shared/.shutdown-requested
+
+# Somebody's own money. Balances, card limits, what they owe and when it goes
+# out — typed in by the person, never fetched from a bank, and never leaving
+# the machine they typed it on. The repository has a second collaborator on
+# it; this is not theirs to read.
+shared/money/
+shared/.profile.json
