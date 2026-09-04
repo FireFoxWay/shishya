@@ -59,12 +59,21 @@ def c(code, text):
     return f"\033[{code}m{text}\033[0m" if COLOUR else text
 
 
-DIM    = lambda t: c("38;5;245", t)
-FAINT  = lambda t: c("38;5;240", t)
-WARM   = lambda t: c("38;5;180", t)      # the accent — a dry sand, not orange
+# Everything here is either a terminal ATTRIBUTE (bold, faint) or one of the
+# sixteen ANSI slots, which a terminal maps through whatever theme it is set
+# to. Nothing names an absolute colour.
+#
+# The first version used 256-colour greys — 252 for body text, 240 and 245 for
+# the quiet parts. On the dark terminal it was written on that read beautifully
+# and on a light one it was very nearly invisible: near-white text on white.
+# A tool that only works on the author's colour scheme is broken for everybody
+# else, and it is broken in a way the author cannot see.
+DIM    = lambda t: c("2", t)             # faint, relative to the theme's ink
+FAINT  = lambda t: c("2", t)
+WARM   = lambda t: c("33", t)            # the accent — the theme's own yellow
 BRIGHT = lambda t: c("1", t)
-INK    = lambda t: c("38;5;252", t)
-BAD    = lambda t: c("38;5;174", t)
+INK    = lambda t: t                     # the terminal's own foreground
+BAD    = lambda t: c("31", t)            # the theme's own red
 INV    = lambda t: c("7", t)
 
 
@@ -92,7 +101,12 @@ def banner():
         print("SHISHYA — the apprentice\n")
         return
     print()
-    print("  " + WARM(MARK) + "  " + BRIGHT("SHISHYA") + "  " + DIM("शिष्य"))
+    # No Devanagari here. It renders correctly in the panel, and in a
+    # terminal the conjunct in शिष्य depends on the font doing glyph
+    # clustering — which many monospace fonts do not, so it came out as
+    # "शि ष्य" with the halant broken across two cells. A wordmark that
+    # renders wrong on the reader's machine is worse than one that is plain.
+    print("  " + WARM(MARK) + "  " + BRIGHT("SHISHYA"))
     print("     " + FAINT("local apprentice · nothing leaves this laptop"))
     print()
 
@@ -349,15 +363,29 @@ def show_help():
 # ─── the loop ───────────────────────────────────────────────────────────────
 
 def prompt_box():
-    """The input line, in a box, the way a terminal app that respects you
-    looks. Drawn above the cursor rather than around it — a box you type
-    inside needs raw mode and cursor arithmetic, and gets it wrong the moment
-    the line wraps or the window is resized."""
+    """The input line, inside a box that is actually closed.
+
+    The first version drew a top, a left edge and a bottom, and no right edge
+    at all — so it read as a cracked frame rather than a box. Nothing was
+    wrong with the borders; there simply was not one on that side.
+
+    The whole line is painted first, right edge included, and the cursor is
+    then walked back to just inside the left edge, so what gets typed lands
+    within a frame that is already complete. \r returns to column zero and
+    [2C steps over the "│ " — cheap, and it needs no raw mode.
+
+    A line longer than the box wraps and spills past the right edge. Keeping
+    it inside would mean taking over input handling entirely, and losing
+    readline — no history, no ctrl-A, no arrow keys — which is a bad trade for
+    a frame that is only cosmetic.
+    """
     w = width()
     if not COLOUR:
         return "> "
     print(FAINT("╭" + "─" * (w - 2) + "╮"))
-    sys.stdout.write(FAINT("│ ") + WARM("› "))
+    sys.stdout.write(FAINT("│") + " " * (w - 2) + FAINT("│"))
+    sys.stdout.write("\r\033[2C")
+    sys.stdout.write(WARM("› "))
     sys.stdout.flush()
     return ""
 
