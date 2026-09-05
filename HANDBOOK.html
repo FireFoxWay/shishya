@@ -240,6 +240,10 @@ footer{margin-top:70px;padding-top:20px;border-top:1px solid var(--rule);
       <tr><td><code>shishya</code></td><td>The terminal. <code>./shishya</code> for the loop, or <code>board</code> / <code>sum FILE</code> / <code>ask "…"</code> to do one thing and exit. Four capabilities only — summarise a document, summarise one you name, read the dashboard, ask it things. Standard library, no colour when piped, and nothing that needs a browser.</td></tr>
       <tr><td><code>host/brain.py</code></td><td>Asking the model and reading a file, host-side. Streams, so a slow answer looks like work rather than a hang.</td></tr>
       <tr><td><code>doctor.py</code></td><td>What works on <em>this</em> machine and what does not. Standard library only and no bash, so it runs where <code>demo.sh</code> cannot — which is the point: it is the first thing a second developer runs after cloning, and it answers honestly rather than encouragingly. Also walks the AST and fails if any text read or write has stopped naming its encoding (&sect;21).</td></tr>
+      <tr><td><code>host/dashboard.py</code></td><td>The overview screen's data, assembled in one call rather than eight. Only the cards this person's profession shows are computed — a developer's dashboard does not read the shop's books, so it does not pay for reading them. Read-only; nothing in it writes.</td></tr>
+      <tr><td><code>host/profile.py</code></td><td>Who is using this and what they do for a living. A profession is nothing more than an ordered list of card names, and the personalisation is deliberately this small: inferring what somebody wants from what they do means watching them, and a project arguing that nothing leaves the laptop should not be building a behavioural profile to pick a chart.</td></tr>
+      <tr><td><code>host/hosts.py</code></td><td>Saved SSH hosts: a name, a user, a hostname, a port, and the <em>path</em> to a key. Never a password, never a passphrase, never a key. Any field named like a credential is refused rather than dropped quietly, so nobody discovers later that it was kept somewhere else.</td></tr>
+      <tr><td><code>vm/shell/money.py</code></td><td>Accounts, what goes out every month, and what a credit score is made of. Pure Python, no GTK and no VM — it runs on Windows as readily as in the sandbox, which is deliberate: this is the part a second developer can pick up without a Lima machine.</td></tr>
       <tr><td><code>host/ledger.py</code></td><td>Append-only JSONL audit log. Nothing in it removes or rewrites a line.</td></tr>
       <tr><td><code>host/secrets.py</code></td><td>Credentials, kept at <code>~/.shishya/</code> — outside the repository, because the whole repo is mounted into the sandbox and anything under it is readable by the clone. Names and lengths are served; values never are.</td></tr>
       <tr><td><code>host/history.py</code></td><td>A git repository of the material — books, schedule, roles, learned procedures — separate from the source history, so "what did the shop do" and "what did we build" stay separate questions.</td></tr>
@@ -698,6 +702,7 @@ allow  lesson.taught  step 2 · Type 'taught mid-run' into cell B2</code></pre>
     <li><b>Scrolling used to blank the screen.</b> Openbox ships four virtual desktops with the mouse wheel over the desktop bound to switching between them, so a scroll that missed a window replaced everything with an empty workspace — indistinguishable, through a video stream, from every app crashing at once. Now one desktop, checked by <code>./demo.sh check</code>.</li>
     <li><b>Clicking inside the sandbox is unreliable.</b> Stale noVNC connections swallow button releases, so windows raise and tooltips show while nothing activates. Drive from the panel; <b>Fix input</b> rebuilds the display in five seconds without closing apps.</li>
     <li><b>The VM stops when the Mac sleeps.</b> Every time. <code>./demo.sh</code> recovers.</li>
+    <li><b>Keyboard injection can die while the machine sits idle.</b> Not on boot — <em>during</em> a session, with nobody touching it. On 4 September the sandbox had been up 34 minutes with no windows open and no viewer attached, and every typed key had stopped arriving: mouse fine, queries fine, AT-SPI fine, and the executor unable to type a character. Nothing logged it. Three runs of <code>./demo.sh check</code> reported it in a row, which is the only reason it was noticed; one <code>vm/display.sh --all</code> cured it. <b>Run the check before you demonstrate, not after</b> — this is exactly the failure it exists for, and it is silent everywhere else.</li>
     <li><b>The egress lock does not survive that restart.</b> nftables rules live in the running kernel and nothing re-applies them at boot, so a sandbox that comes back after the Mac slept comes back <em>open</em>. Found on 3 September by the panel reporting it honestly, which is the only reason it was found at all — the indicator is measured from the guest, so it said OPEN rather than remembering what it had been told. <b>This is the single most testable claim in the project</b>, and a judge asking to see it locked is the likeliest question there is. Until a boot service re-applies it, locking is a step in the pre-flight, not a property of the machine.</li>
     <li><b>Ollama is an app and quits.</b> <code>demo.sh</code> restarts it.</li>
     <li><b>Filenames uploaded before 21 August are mangled</b> (<code>01_20Retail_20Inventory.xlsx</code> was <code>01 Retail Inventory.xlsx</code>). The encoding bug is fixed; old files were never renamed.</li>
@@ -1173,8 +1178,49 @@ allow  lesson.taught  step 2 · Type 'taught mid-run' into cell B2</code></pre>
   <p>The terminal talks to Ollama on the host directly rather than driving the sandbox's chat window through the accessibility tree. That is not a hole in the boundary. The sandbox contains the <em>clone</em> — it is what stops an agent reading the laptop — and was never meant to stop the <em>owner</em> reading their own files. A terminal the owner opened, over ssh they authenticated, asking about a path they typed, is the owner reading their own file. Every one of those reads is recorded in the ledger regardless.</p>
 </section>
 
+<!-- ══════════════════════════════════════════════ -->
+<section id="erp">
+  <h2><span class="num">23</span>The ERP</h2>
+  <p>Six screens on a rail, one showing at a time. Which cards the dashboard draws is decided by a profession — retail owner, manufacturer, freelancer, salaried, student, other — and that is the whole of the personalisation.</p>
+  <div class="tw"><table>
+    <thead><tr><th>#</th><th>Screen</th><th>What it is</th></tr></thead>
+    <tbody>
+      <tr><td>01</td><td>Dashboard</td><td>Welcome by name · takings as a line · add-ons as a ring · top metrics · what is running out · what is waiting on a person</td></tr>
+      <tr><td>02</td><td>Terminal</td><td>The existing run-command path, with somewhere to type into. No pty, so no interactive programs and no <code>cd</code> that survives — and it says so rather than letting somebody find out.</td></tr>
+      <tr><td>03</td><td>SSH</td><td>Saved hosts and a session</td></tr>
+      <tr><td>04</td><td>Banking</td><td>Position, and what goes out every month</td></tr>
+      <tr><td>05</td><td>CSMA</td><td>The credit assistant</td></tr>
+      <tr><td>06</td><td>You</td><td>Pick a profession, see what it gets you</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Two places this departs from the drawing, on purpose</h3>
+  <div class="box b-bad">
+    <span class="lbl">The 742</span>
+    <p>The wireframe puts a credit score in a gauge with "+12 this month", and that number is worth having on screen — but not if this program invented it. <b>No formula outside a bureau produces somebody's score</b>, and one made up here would be believed <em>precisely because</em> it sat next to real arithmetic.</p>
+    <p>So the gauge shows what a bureau actually told you, on the day it told you, and the delta is a subtraction of two readings you entered. True by construction. Everything else on that screen is arithmetic on your own figures plus the published five-factor breakdown, and it recommends no product. <code>money.py</code> is a log, not a model.</p>
+  </div>
+  <div class="box b-bad">
+    <span class="lbl">There is no "link account"</span>
+    <p>Linking means holding a banking credential. There is no field in Banking that would take a password, a PIN or an OTP, and the sandbox has no network to send one over — which would make such a field a lie as well as a hazard. Every figure is one somebody typed in or exported from their own statement, which is also what makes it demonstrable: there is no live account to go wrong in front of an audience.</p>
+  </div>
+
+  <h3>SSH is a third state of the lock</h3>
+  <p>Browsing opens 80 and 443. This opens 22. Neither opens the other, and both are off by default, measured from the guest rather than remembered, and recorded in the ledger. The cost is worth stating plainly: with SSH out on, the sandbox can reach a machine you own and, through it, whatever that machine can reach. That is what SSH is for and it is also the whole of the risk, so it is a switch somebody throws deliberately, per session.</p>
+
+  <h3>Three things found while building it</h3>
+  <ul>
+    <li><b>Anything host-side importing <code>books.py</code> read the wrong folder.</b> <code>common.py</code> computes <code>SHARED</code> as <code>~/shared</code>, which is right inside the VM — the clone's home is where the mount lands — and on the Mac resolves to the calling user's home, a directory that exists and is empty. Nothing raised. The dashboard simply reported a shop with no stock problems while the alerts said 149. Pinned in <code>_sandbox()</code>. <span class="lesson">A path that is correct on one side of a boundary and merely <em>valid</em> on the other fails silently, which is the worst way for a path to be wrong.</span></li>
+    <li><b>Banking and CSMA went blank for half the professions.</b> They read their data off <code>/dashboard</code>, which only computes the cards the current profession shows — so a retail owner opening the credit assistant was told nothing had been recorded, when it had. They have their own route now: they are apps, not views of the dashboard.</li>
+    <li><b>All six screens rendered at once, tiled side by side.</b> <code>[hidden]</code> is styled by the browser in its own stylesheet, which <em>any</em> author rule outranks — and <code>.screenBody{display:flex}</code> is an author rule. The markup said hidden and the layout disagreed. <span class="lesson">The <code>hidden</code> attribute is a suggestion until you make it <code>!important</code>.</span></li>
+  </ul>
+
+  <h3>What is not in the repository</h3>
+  <p><code>shared/money/</code>, <code>shared/.profile.json</code> and <code>shared/.hosts.json</code> are ignored. Somebody's balances, what they owe and when it goes out are not for a repository with a second collaborator on it.</p>
+</section>
+
 <footer>
-  Shishya Handbook · 4 September 2026 · 20,250 lines across 85 tracked files · 49 commits<br>
+  Shishya Handbook · 4 September 2026 · 19,845 lines across 84 tracked files · 51 commits<br>
   Everything marked verified was checked against source data, not merely observed to run.
 </footer>
 

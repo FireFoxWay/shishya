@@ -64,6 +64,28 @@ run when something looks wrong. It exists because a dead Xvfb presents as
 the wrong layer, and guessing which component failed wastes the time you do
 not have. `./demo.sh reset` also rolls the sandbox back to clean.
 
+### The terminal
+
+The panel is a browser on localhost, which is awkward when the laptop is in
+one country and you are in another. `./shishya` is not:
+
+```bash
+ln -sf "$PWD/shishya" /opt/homebrew/bin/shishya    # once
+shishya                                            # the loop
+shishya board                                      # or one thing, and exit
+shishya sum ~/Downloads/sales.xlsx
+shishya ask "what did we take last week?"
+```
+
+Four things, and the restraint is the design: summarise a document already on
+the machine, summarise one you name, read the dashboard as text, and ask it
+things. Teaching a procedure and watching the clone work need to be *seen* and
+stay in the panel.
+
+Standard library only, because this runs on a machine you have just `ssh`'d
+into. Colour switches off when it is not a terminal, so `shishya board >
+today.txt` gives you plain text.
+
 ### On Windows
 
 **The sandbox does not run.** Lima is macOS and Linux; there is no Windows
@@ -185,17 +207,32 @@ milliseconds** and costs no extra space until blocks diverge.
 ## Layout
 
 ```
+shishya              the terminal — ask, summarise, read the dashboard
+doctor.py            what works on THIS machine, and what does not
 demo.sh              bring everything to a known-good state
 serve.py             control panel server + JSON API
-host/vm.py           lima wrapper: snapshot, rollback, egress lock
+
+host/vm.py           lima wrapper: snapshot, rollback, egress lock, ssh mode
+host/brain.py        asking the model and reading a file, host-side
+host/dashboard.py    the overview screen's data, assembled in one call
+host/profile.py      who is using this and what they do for a living
+host/hosts.py        saved ssh hosts — never a password, only a key path
 host/ledger.py       append-only audit log, including refusals
+host/secrets.py      credentials, kept OUTSIDE this repo on purpose
 host/synth.py        trace → editable plain-language procedure
+
 vm/lima.yaml         the sandbox — its mount list IS the boundary
-vm/provision.sh      the clone's desktop: Xvfb, openbox, VNC, AT-SPI
+vm/provision.sh      builds the machine, once
+vm/display.sh        Xvfb, openbox, x11vnc, noVNC — re-runnable
 vm/recorder.py       records AT-SPI events, not mouse coordinates
+vm/executor.py       performs a learned procedure against live apps
 vm/locate.py         find a control by name → a point on screen
-vm/tree.py           dump the accessibility tree
+
+vm/shell/books.py    the shop: stock, sales, margin, GST, void, returns
+vm/shell/invoice.py  GST tax invoices
+vm/shell/money.py    accounts, commitments, what a credit score is made of
 vm/shell/            the desktop and its apps
+
 web/                 the control panel — plain ES modules, no build step
 ```
 
@@ -206,15 +243,41 @@ dependency at a demo table.
 
 ## Status
 
-**Works.** Sandbox, clone's desktop, take-the-wheel, APFS snapshot and
-rollback, permission ledger, egress lock, file transfer from the host,
-document Q&A over dropped files, document generation (`.xlsx` / `.docx` /
-`.pptx`), spreadsheet editing, LibreOffice as a first-class app, procedure
-synthesis from a trace.
+**Works, and is checked.** `./demo.sh check` runs 24 assertions in about a
+minute — including typing a key into a real window and reading it back, and
+asking the *guest* whether the egress lock is on rather than remembering
+what it was told.
 
-**Not built yet.** The **executor** — it learns a procedure and writes it
-down, but does not yet perform one. That is the largest remaining piece.
+The sandbox and the clone's desktop; take-the-wheel; APFS snapshot and
+rollback; the permission ledger; the egress lock; document Q&A over dropped
+files; document generation (`.xlsx` / `.docx` / `.pptx`); **the executor**,
+which performs a taught procedure against live LibreOffice and reads each
+cell back to check it landed; GST billing, tax invoices, void and returns;
+stock audit, scheduled runs, alerts, backups; clerk/head roles with approvals
+between them; a Tally XML round trip; a six-screen ERP; and the terminal.
 
-**Known.** The recorder needs its noise filter verified against a real
-demonstration; the taskbar clock used to register as typing, which is fixed
-but untested end to end.
+**Not proved yet, which is a different thing.**
+
+- **Nobody outside this project has used it.** Every bill so far was rung up
+  by a script. One shopkeeper for one afternoon is worth more than any
+  feature still on the list.
+- **Tally has never accepted the XML.** It passes every check that can run
+  here; that is not the same claim. It needs a Windows machine.
+- **Nobody who reads Telugu has read the Telugu answers**, and the English
+  and Telugu versions are known to differ in emphasis. Marked *do not
+  demonstrate* until they have.
+- **The egress lock does not survive a VM restart.** nftables rules are
+  runtime-only and nothing re-applies them at boot, so a sandbox that comes
+  back after the Mac slept comes back *open*. The panel reports this
+  honestly, which is the only reason it was found. Until a boot service
+  fixes it, locking is a step in the pre-flight rather than a property of
+  the machine.
+- **Keyboard injection into the sandbox can die on its own.** Mouse fine,
+  queries fine, every typed key silently swallowed — which stops the
+  executor dead. It happened once while the machine sat idle. `demo.sh
+  check` types a probe and catches it; `vm/display.sh --all` fixes it.
+
+**Not public, and not yet publishable.** `shared/training/` holds a real
+pharmacy's purchase history, and it is in git history rather than only in the
+working tree. That comes out with `git filter-repo` before this repository
+goes anywhere.
