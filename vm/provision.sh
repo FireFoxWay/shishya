@@ -170,6 +170,29 @@ TimeoutStartSec=330
 WantedBy=multi-user.target
 UNIT
 
+# The network lock, re-applied at every boot.
+#
+# nftables rules live in the running kernel and nowhere else, so a VM that
+# came back from the Mac sleeping came back with no rules at all — open. The
+# panel reported it honestly and that is the only reason it was ever noticed.
+# Coming back locked is the safe default; coming back open is not.
+#
+# Before the network is up, so there is no window in which the sandbox is
+# running and unlocked.
+cat > /etc/systemd/system/shishya-egress.service <<'UNIT'
+[Unit]
+Description=Shishya network lock
+DefaultDependencies=no
+Before=network-pre.target
+Wants=network-pre.target
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/bash /opt/shishya/vm/egress.sh
+[Install]
+WantedBy=sysinit.target
+UNIT
+
 # The desktop as a service, so it is restarted rather than remembered.
 # Started by hand it stacked up silently — several desktops and several
 # taskbars at once, each drawing over the last. systemd keeps exactly one.
@@ -195,7 +218,7 @@ WantedBy=multi-user.target
 UNIT
 
 systemctl daemon-reload
-systemctl enable --now shishya-dbus shishya-display shishya-atspi shishya-wm shishya-vnc shishya-novnc shishya-desktop shishya-warm
+systemctl enable --now shishya-dbus shishya-display shishya-atspi shishya-wm shishya-vnc shishya-novnc shishya-desktop shishya-warm shishya-egress
 
 # GTK apps check this before exposing anything to AT-SPI.
 sudo -u clone env DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/shishya-bus \

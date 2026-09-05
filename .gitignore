@@ -48,3 +48,4 @@ shared/.shutdown-requested
 # it; this is not theirs to read.
 shared/money/
 shared/.profile.json
+shared/models/

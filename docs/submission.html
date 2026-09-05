@@ -1,0 +1,197 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Shishya — Innovation Contest Submission</title>
+<style>
+  @page { size: A4; margin: 15mm 15mm 14mm; }
+
+  /* One family, one accent, and space doing the work that rules and boxes
+     were doing in the first version. */
+  :root {
+    --ink:   #14161a;
+    --ink-2: #3d434c;
+    --ink-3: #767d88;
+    --line:  #dfe2e6;
+    --accent:#8a5a2b;
+    --wash:  #f7f5f2;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body {
+    margin: 0;
+    font: 9.8pt/1.54 "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    color: var(--ink-2);
+  }
+  h1, h2, h3, .lbl, .ev-n, .ev-l, .meta, .chip {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+
+  /* ── masthead ─────────────────────────────────────────────────────── */
+  .top { display: flex; justify-content: space-between; align-items: baseline;
+         border-bottom: 1.5px solid var(--ink); padding-bottom: 4mm; }
+  h1 { margin: 0; font-size: 27pt; font-weight: 700; letter-spacing: -.022em;
+       color: var(--ink); line-height: 1; }
+  .sub { margin: 2.5mm 0 0; font-size: 10.5pt; font-style: italic;
+         color: var(--ink-3); max-width: 118mm; line-height: 1.4; }
+  .school { font-size: 8pt; letter-spacing: .13em; text-transform: uppercase;
+            color: var(--ink-3); text-align: right; line-height: 1.7; }
+  .school b { color: var(--ink); font-weight: 600; }
+
+  /* ── the two dropdown answers, stated up front ────────────────────── */
+  .chips { display: flex; gap: 4mm; margin: 4mm 0 5.5mm; }
+  .chip { flex: 1; border: 1px solid var(--line); background: var(--wash);
+          padding: 3mm 4mm; border-radius: 1.2mm; }
+  .chip span { display: block; font-size: 7pt; letter-spacing: .13em;
+               text-transform: uppercase; color: var(--ink-3); margin-bottom: 1.2mm; }
+  .chip b { font-size: 9pt; font-weight: 600; color: var(--ink); line-height: 1.35; }
+
+  /* ── a field of the form ──────────────────────────────────────────── */
+  /* Sections may break across pages; the pieces inside them may not.
+     `break-inside: avoid` on the whole section meant a long one that started
+     near the foot of page two was moved to page three entire, leaving a hand's
+     width of blank paper and a third sheet carrying almost nothing. Keeping a
+     heading with what follows it, and never splitting a single statistic or a
+     table row, gets the same tidiness without the wasted page. */
+  section { margin-bottom: 5.2mm; }
+  .lbl { break-after: avoid; }
+  .ev, .ben, .pull, .chip { break-inside: avoid; }
+  p { orphans: 2; widows: 2; }
+  .lbl { display: flex; align-items: baseline; gap: 3mm;
+         border-bottom: 1px solid var(--line); padding-bottom: 1.6mm;
+         margin-bottom: 3mm; }
+  .lbl h2 { margin: 0; font-size: 9pt; font-weight: 700; letter-spacing: .1em;
+            text-transform: uppercase; color: var(--ink); }
+  .lbl .n { font-size: 8pt; font-weight: 700; color: var(--accent);
+            font-variant-numeric: tabular-nums; }
+  .lbl .cap { margin-left: auto; font-size: 7.5pt; color: var(--ink-3);
+              font-variant-numeric: tabular-nums; }
+  p { margin: 0 0 2.2mm; text-align: justify; hyphens: auto; }
+  p:last-child { margin-bottom: 0; }
+
+  /* The one sentence a reader keeps if they keep nothing else. */
+  .pull { border-left: 2.5px solid var(--accent); padding: 1mm 0 1mm 4mm;
+          margin: 3.2mm 0; font-size: 11pt; line-height: 1.45; color: var(--ink);
+          font-style: italic; }
+
+  /* ── evidence ─────────────────────────────────────────────────────── */
+  .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 3.5mm; }
+  .ev { border-top: 1.5px solid var(--ink); padding-top: 2mm; }
+  .ev-n { font-size: 17pt; font-weight: 700; color: var(--ink);
+          letter-spacing: -.02em; line-height: 1; font-variant-numeric: tabular-nums; }
+  .ev-l { font-size: 7.5pt; letter-spacing: .07em; text-transform: uppercase;
+          color: var(--accent); margin: 1.2mm 0 1.6mm; font-weight: 600; }
+  .ev-w { font-size: 8.2pt; line-height: 1.45; color: var(--ink-3); }
+
+  /* ── beneficiaries ────────────────────────────────────────────────── */
+  .ben { display: grid; grid-template-columns: 52mm 1fr; gap: 4mm;
+         padding: 1.6mm 0; border-bottom: 1px solid var(--line); }
+  .ben:last-of-type { border-bottom: 0; }
+  .ben-who { font-weight: 600; color: var(--ink); font-size: 9.2pt; }
+  .ben-what { font-size: 9.2pt; }
+  .tail { margin-top: 3mm; font-style: italic; color: var(--ink-3); }
+
+  footer { margin-top: 6mm; border-top: 1px solid var(--line); padding-top: 3mm;
+           display: flex; justify-content: space-between;
+           font-size: 7.5pt; letter-spacing: .06em; color: var(--ink-3);
+           font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
+</style>
+
+<div class="top">
+  <div>
+    <h1>Shishya</h1>
+    <p class="sub">An apprentice for the small-town chemist — it learns the counter work by watching, and never leaves the shop</p>
+  </div>
+  <div class="school"><b>St Andrews High School</b><br>Innovation Contest<br>Proof of Concept</div>
+</div>
+
+<div class="chips">
+  <div class="chip"><span>Theme</span><b>ICT, cyber-physical systems, Blockchain, Cognitive computing, Cloud computing, AI &amp; ML</b></div>
+  <div class="chip"><span>Nature of solution</span><b>Software</b></div>
+</div>
+
+<section>
+  <div class="lbl"><span class="n">01</span><h2>Describe the problem identified</h2>
+    <span class="cap">242 / 250 words</span></div>
+  <p>A chemist in a small town stocks around seventeen thousand different products and orders them from memory. There is no analyst and no buying department; there is one person who also runs the counter, and who decides on a Tuesday evening what to reorder based on what they noticed running low.</p>
+<p>When they are wrong, somebody goes without. A patient on chronic medication — blood pressure, thyroid, diabetes — arrives for a monthly refill and the box is not there. In a town with one pharmacy that means travelling to the next town, or going without until Thursday. Neither is a small thing when the prescription is one you are meant to take daily and without a break.</p>
+<p>The rest of the day is retyping. Purchase invoices into the stock register. Stock into the GST return. The same figures entered twice or three times into software that was written in 2011, runs only on Windows, and has no way to talk to anything else.</p>
+<p>The obvious answer is to put an AI on it, and that is where it stops. Doing so means uploading the shop&#x27;s purchase history and its customers&#x27; prescription records to a server the owner does not control, cannot audit, and cannot delete from. Under the DPDP Act those records are personal data the shop is answerable for. So the tools that would help are the ones they have the strongest reason not to touch, and the retyping continues.</p>
+</section>
+
+<section>
+  <div class="lbl"><span class="n">02</span><h2>Novelty &mdash; uniqueness</h2>
+    <span class="cap">150 / 150 words</span></div>
+  <p>Three things together, not found elsewhere in one system.</p>
+<p>It learns by being shown. Do the job once; it writes down what it learned as a numbered procedure in plain English you can correct. Not screen coordinates, and not a plan re-invented each run — an artefact you can audit before it is performed.</p>
+<p>It trains its own model, on the shop&#x27;s machine. Running someone else&#x27;s model locally is ordinary now; training one is not, and a shop&#x27;s demand pattern is private business intelligence that should never go to a vendor. Our forecaster is written from scratch — forward pass, backpropagation, optimiser — and trains on the shop&#x27;s own history in under four seconds.</p>
+<p>And it can prove what it did. Every action and refusal lands in an append-only ledger, and the network lock is measured from inside the sandbox rather than asserted, so it is testable in ten seconds.</p>
+</section>
+
+<section>
+  <div class="lbl"><span class="n">03</span><h2>Describe the solution</h2>
+    <span class="cap">226 / 250 words</span></div>
+  <p>Shishya runs entirely on the chemist&#x27;s own laptop. No account, no server, no internet connection.</p>
+<p>The AI lives in a sandboxed Linux virtual machine with its own screen and its own office software. It sees only the folders explicitly mounted into it — that mount list is the whole security boundary, not a policy enforced in code — and its outbound network is dropped at the firewall except for the local model. That lock is re-applied at every boot and reported by asking the sandbox, never by remembering.</p>
+<p>You teach it by doing the job once while it watches. It converts the recording into a numbered plain-language procedure you can edit, then performs it against the live application through the accessibility tree, reading each result back to confirm it landed. That last part is why it works on software from 2011 that has no API: it reads the window the way a screen reader does. Where it is unsure it stops and asks rather than guessing.</p>
+<p>On top of that sits the counter work: GST billing and tax invoices, a stock audit against reorder points, monthly reports, and an accounting export. The forecaster turns reordering from reactive into predictive — not &quot;you have run out&quot; but &quot;this will run out.&quot;</p>
+<p>Everything stays a file on the machine, and one command rolls the sandbox back to clean.</p>
+  <div class="pull">Show it once. Read what it wrote down. Correct it if it is
+    wrong. Then watch it do the job &mdash; on a machine with the network
+    switched off.</div>
+</section>
+
+<section>
+  <div class="lbl"><span class="n">04</span><h2>Target beneficiaries</h2></div>
+  <p>One user, deliberately: the owner-operator of a single-branch pharmacy in a small town or an urban neighbourhood — the person who runs the counter and also does the ordering, the GST return and the stock register.</p>
+  <div style="margin-top:3mm"><div class="ben">
+          <div class="ben-who">Directly, the chemist</div>
+          <div class="ben-what">Hours a week of retyping returned, and reordering that is predicted rather than remembered.</div>
+        </div>
+<div class="ben">
+          <div class="ben-who">Their patients</div>
+          <div class="ben-what">Fewer stockouts of chronic medication in places where the next pharmacy is in the next town.</div>
+        </div>
+<div class="ben">
+          <div class="ben-who">Then, the same shape of business</div>
+          <div class="ben-what">A general store, a hardware merchant, a small wholesaler — anyone with many lines, legacy Windows software and records they cannot upload. India has roughly 63 million MSMEs, almost all below the size that enterprise automation is ever sold to.</div>
+        </div></div>
+  <p class="tail">We have deliberately not written this for clinics, schools and government offices as well. The technique carries to them; the product should earn one user first.</p>
+</section>
+
+<section>
+  <div class="lbl"><span class="n">05</span><h2>What already works, measured</h2></div>
+  <div class="grid"><div class="ev">
+          <div class="ev-n">31%</div>
+          <div class="ev-l">better than the baseline</div>
+          <div class="ev-w">Our from-scratch forecaster against &#x27;next month looks like last month&#x27;, on a held-out month it never saw. MAE 7.47 against 10.86.</div>
+        </div>
+<div class="ev">
+          <div class="ev-n">3.9s</div>
+          <div class="ev-l">to train, on the laptop</div>
+          <div class="ev-w">12,079 products, 17 months, 120,790 training windows. numpy only — no framework, no GPU, no upload.</div>
+        </div>
+<div class="ev">
+          <div class="ev-n">17,011</div>
+          <div class="ev-l">real products of history</div>
+          <div class="ev-w">An actual pharmacy purchase export, 54 columns. Unprompted, it also found the same supplier spelled two different ways.</div>
+        </div>
+<div class="ev">
+          <div class="ev-n">8/8</div>
+          <div class="ev-l">steps performed on live software</div>
+          <div class="ev-w">A taught procedure carried out against a running spreadsheet, each cell read back to confirm it landed.</div>
+        </div>
+<div class="ev">
+          <div class="ev-n">0</div>
+          <div class="ev-l">bytes leave the machine</div>
+          <div class="ev-w">Verified from inside the sandbox: the model answers, github times out. The lock re-applies itself at every boot.</div>
+        </div>
+<div class="ev">
+          <div class="ev-n">24</div>
+          <div class="ev-l">automated checks pass</div>
+          <div class="ev-w">Including a typed-key probe and the network lock read from the guest rather than remembered.</div>
+        </div></div>
+</section>
+
+<footer>
+  <span>K. Umesh · V. Gowri Shankar · V. Srothus · A. Nithya · T. Sahara</span>
+  <span>Built and measured on one laptop &middot; September 2026</span>
+</footer>
