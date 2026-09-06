@@ -262,6 +262,10 @@ footer{margin-top:70px;padding-top:20px;border-top:1px solid var(--rule);
       <tr><td><code>vm/lima.yaml</code></td><td>The sandbox definition. Its mount list <em>is</em> the security boundary.</td></tr>
       <tr><td><code>vm/provision.sh</code></td><td>Builds the sandbox once: dbus, AT-SPI, LibreOffice, Falkon, every Python library, and the systemd units that keep them up. Hands the display stack to <code>vm/display.sh</code>.</td></tr>
       <tr><td><code>vm/shell/approvals.py</code></td><td>The queue a clerk's request waits in and a head decides on. Append-only, like the ledger; a decision is recorded, then acted on once — verified idempotent rather than assumed. Requests older than 24 hours go stale rather than lingering as something that might still fire.</td></tr>
+      <tr><td><code>vm/egress.sh</code></td><td>The network lock, as a script that can be re-run. Everything outbound dropped except the host's model. Installed as <code>shishya-egress.service</code>, oneshot, ordered before <code>network-pre.target</code> so there is no window in which the sandbox is up and unlocked.</td></tr>
+      <tr><td><code>vm/forecast.py</code></td><td>The demand forecaster, written from scratch &mdash; forward pass, backpropagation, momentum and initialisation all in the file. numpy does array arithmetic and nothing else (&sect;24). <code>train</code> / <code>check</code> / <code>ahead&nbsp;ID</code>.</td></tr>
+      <tr><td><code>vm/shell/bank_app.py</code></td><td>Accounts and what leaves them every month. No bank is connected and no field will take a password, a PIN or an OTP &mdash; the sandbox has no network to send one over, which would make such a field a lie as well as a hazard.</td></tr>
+      <tr><td><code>vm/shell/credit_app.py</code></td><td>The credit assistant. Shows the score a bureau gave you and the change since the last reading; it does not compute one, because no formula outside a bureau can and an invented number would be believed.</td></tr>
       <tr><td><code>vm/display.sh</code></td><td>Xvfb, openbox, x11vnc and the noVNC bridge, as re-runnable configuration. Split out of <code>provision.sh</code> because that runs once per machine: a display change used to mean rebuilding the VM. <code>--all</code> restarts X too and closes the clone's apps; without it only the video path is rebuilt.</td></tr>
       <tr><td><code>vm/recorder.py</code></td><td>Records a demonstration as semantic events, plus assembled keystrokes.</td></tr>
       <tr><td><code>vm/executor.py</code></td><td>Performs a learned procedure. Four actions; skips what it does not recognise, halts rather than guessing, and reads each cell back.</td></tr>
@@ -703,7 +707,7 @@ allow  lesson.taught  step 2 · Type 'taught mid-run' into cell B2</code></pre>
     <li><b>Clicking inside the sandbox is unreliable.</b> Stale noVNC connections swallow button releases, so windows raise and tooltips show while nothing activates. Drive from the panel; <b>Fix input</b> rebuilds the display in five seconds without closing apps.</li>
     <li><b>The VM stops when the Mac sleeps.</b> Every time. <code>./demo.sh</code> recovers.</li>
     <li><b>Keyboard injection can die while the machine sits idle.</b> Not on boot — <em>during</em> a session, with nobody touching it. On 4 September the sandbox had been up 34 minutes with no windows open and no viewer attached, and every typed key had stopped arriving: mouse fine, queries fine, AT-SPI fine, and the executor unable to type a character. Nothing logged it. Three runs of <code>./demo.sh check</code> reported it in a row, which is the only reason it was noticed; one <code>vm/display.sh --all</code> cured it. <b>Run the check before you demonstrate, not after</b> — this is exactly the failure it exists for, and it is silent everywhere else.</li>
-    <li><b>The egress lock does not survive that restart.</b> nftables rules live in the running kernel and nothing re-applies them at boot, so a sandbox that comes back after the Mac slept comes back <em>open</em>. Found on 3 September by the panel reporting it honestly, which is the only reason it was found at all — the indicator is measured from the guest, so it said OPEN rather than remembering what it had been told. <b>This is the single most testable claim in the project</b>, and a judge asking to see it locked is the likeliest question there is. Until a boot service re-applies it, locking is a step in the pre-flight, not a property of the machine.</li>
+    <li><b>The egress lock survives a restart now &mdash; it did not until 6 September.</b> nftables rules live only in the running kernel and nothing re-applied them, so a sandbox that came back after the Mac slept came back <em>open</em>. It was found because the panel reports the lock by asking the guest rather than remembering, and it said OPEN. <code>shishya-egress.service</code> re-applies it before the network comes up. The pre-flight step is gone; the property is the machine's. <b>Test it anyway</b> &mdash; it is the ten-second claim a judge is likeliest to check.</li>
     <li><b>Ollama is an app and quits.</b> <code>demo.sh</code> restarts it.</li>
     <li><b>Filenames uploaded before 21 August are mangled</b> (<code>01_20Retail_20Inventory.xlsx</code> was <code>01 Retail Inventory.xlsx</code>). The encoding bug is fixed; old files were never renamed.</li>
     <li><b>The Telugu answer may be saying something different from the English one.</b> Asked the same question, the English reply opens "does <b>not</b> automatically qualify" and the Telugu opens "అవును" — yes. Both then give the 65–75% band and the 15-day certificate rule, so the substance is there and the emphasis is not the same. Nobody on this project reads Telugu, and a policy answer that leads with the wrong word is exactly the kind of error that matters. <b>Do not demonstrate this until a Telugu speaker has read it.</b></li>
@@ -1046,6 +1050,21 @@ allow  lesson.taught  step 2 · Type 'taught mid-run' into cell B2</code></pre>
   <p>"Personalised" is already true and should be said plainly. It does not learn shops in general. It learns <em>this</em> one — the lessons in <code>shared/lessons/</code> are the personalisation, and they are per-machine by construction.</p>
   <p>The one piece of new interface that earns its place is <b>a single overview screen</b>: today's takings and margin, stock at its reorder point, what is owed, what is scheduled, what is waiting on a person. Every one of those numbers already exists — they are scattered across Billing, Reports, Alerts and the panel. Gathering them is half a day and it is what "ERP" <em>looks</em> like in the first fifteen seconds of a video call. Purchase orders, the supplier side and a real profit-and-loss are genuine ERP scope and genuine weeks. Not with a screening pending.</p>
 
+  <h3>One user, not five</h3>
+  <p>The submission's first draft named five kinds of beneficiary &mdash; shops, clinics, schools, accountants, government offices. That is a category, not a customer, and it was the sharpest criticism this project has received. A pitch that serves everybody convinces nobody, and it invites the follow-up nobody wants: <i>"so who is it actually for?"</i></p>
+  <p>It is written for <b>the owner-operator of a single-branch pharmacy</b> &mdash; the person who runs the counter and also does the ordering, the GST return and the stock register. Chosen not because the technique is limited to them but because it is <b>the one vertical where the evidence is real rather than illustrative</b>: the 17,011-product purchase history in <code>shared/training/</code> is an actual pharmacy's, and the forecaster is trained on it.</p>
+  <p>The consequence becomes a person rather than an inconvenience. A patient on chronic medication &mdash; blood pressure, thyroid, diabetes &mdash; arrives for a monthly refill and the box is not there; in a town with one pharmacy that means the next town, or going without. Every feature already built reads differently against that:</p>
+  <div class="tw"><table>
+    <thead><tr><th>Feature</th><th>Said broadly</th><th>Said to the chemist</th></tr></thead>
+    <tbody>
+      <tr><td>Stops when unsure</td><td>a nice safety touch</td><td>the wrong reorder is a stockout of somebody's medicine</td></tr>
+      <tr><td>Append-only ledger</td><td>good engineering</td><td>a Schedule&nbsp;H register has to be defensible</td></tr>
+      <tr><td>Runs offline</td><td>privacy-minded</td><td>prescription records are personal data under the DPDP Act</td></tr>
+      <tr><td>Accessibility tree</td><td>robust automation</td><td>the billing software is from 2011 and has no API</td></tr>
+    </tbody>
+  </table></div>
+  <p class="lesson">Same product, not one line of code different. The story went from "saves time" to "the ordering stops being done from memory." <b>The breadth was never a feature; it was an unmade decision.</b></p>
+
   <h3>The order of work</h3>
   <p>Ordered by what a judge finds first, not by what is most interesting to build. The two at the top need a person and a Windows machine; nothing in this repository can close them.</p>
 
@@ -1219,8 +1238,49 @@ allow  lesson.taught  step 2 · Type 'taught mid-run' into cell B2</code></pre>
   <p><code>shared/money/</code>, <code>shared/.profile.json</code> and <code>shared/.hosts.json</code> are ignored. Somebody's balances, what they owe and when it goes out are not for a repository with a second collaborator on it.</p>
 </section>
 
+<!-- ══════════════════════════════════════════════ -->
+<section id="forecast">
+  <h2><span class="num">24</span>The forecaster, written from scratch</h2>
+  <p>Running somebody else's model on your own machine is ordinary now &mdash; Ollama does it, LM Studio does it. <b>Training one there is not.</b> A shop's demand pattern is exactly the private business intelligence this whole project argues should never reach a vendor, so it does not: <code>vm/forecast.py</code> trains on the shop's own history, on the shop's own laptop, and the weights exist nowhere else.</p>
+  <p>Forward pass, backpropagation, momentum and initialisation are all written out in the file. numpy does array arithmetic and nothing else &mdash; no autograd, no layer somebody else wrote, no GPU. One hidden layer, twenty-four units, six months of history in and next month out.</p>
+
+  <h3>What it is measured against</h3>
+  <p>A forecaster that cannot beat <i>"next month looks like last month"</i> is worse than useless, because it is wrong with confidence. So that is the first thing it is made to answer, and <code>check</code> prints the comparison whether or not it flatters us.</p>
+  <div class="tw"><table>
+    <thead><tr><th>On a held-out month it never saw</th><th>MAE</th></tr></thead>
+    <tbody>
+      <tr><td><b>This model</b></td><td><b>7.469</b></td></tr>
+      <tr><td>Same as last month</td><td>10.862</td></tr>
+      <tr><td>Recent average</td><td>12.572</td></tr>
+    </tbody>
+  </table></div>
+  <p><b>31.2% better than the best baseline.</b> 12,079 products, 17 months, 120,790 training windows, <b>3.9 seconds</b> to train on the laptop. The split is by <em>time</em>, not at random: shuffling months into the training set would let the model see the future of a product it is then tested on, which is the classic way to build a forecaster that scores beautifully and is worthless.</p>
+
+  <div class="fail">
+    <h4>A fifty-one month history that ended in a purchase price</h4>
+    <p class="sym">Symptom: the loss went to NaN in the first epoch and stayed there. The "last month" of the data printed as <code>Net Pur</code>.</p>
+    <dl>
+      <dt>Cause</dt><dd>The sheet stores months as columns &mdash; wide, the way a person builds a spreadsheet &mdash; and the code assumed everything after the four identifier columns was a month. Only columns 4&ndash;20 are. After them come a manufacturer name, a closing quantity, ten supplier columns and ten price columns. The model was being trained to predict a rupee figure from a mixture of quantities and supplier names.</dd>
+      <dt>Second cause, in the same run</dt><dd>Purchase quantities can be negative &mdash; a credit note, a return &mdash; and <code>log1p</code> is undefined below &minus;1. That is where the NaN actually entered. Clipped at zero: for the question "how much will be needed next month", a return is not negative demand, it is no demand.</dd>
+      <dt>Lesson</dt><dd class="lesson">Month columns are found by asking which headers are dates, rather than by counting from the left. <b>A spreadsheet's shape is a claim about the data, and it is worth checking before training on it</b> &mdash; the failure was loud here, and would have been silent if those trailing columns had happened to be numeric and positive.</dd>
+    </dl>
+  </div>
+
+  <div class="fail">
+    <h4>~/shared exists on the Mac, and it is the wrong one</h4>
+    <p class="sym">Third time this has been paid for. <code>FileNotFoundError</code>, on a path that looked right.</p>
+    <dl>
+      <dt>Cause</dt><dd>Inside the sandbox the shared folder is <code>~/shared</code>. On the Mac that path <em>also exists</em> &mdash; a different, empty directory &mdash; so <code>if not SHARED.exists()</code> picked it and never fell back to the repository copy. It already cost a dashboard that reported a shop with no stock problems while the alerts said 149.</dd>
+      <dt>Lesson</dt><dd class="lesson">Do not test whether a directory is there. <b>Test for a file only the real one would contain.</b> An empty directory with the right name is the most convincing wrong answer a path check can give you.</dd>
+    </dl>
+  </div>
+
+  <h3>What it is honestly worth</h3>
+  <p>A neural network implemented by hand is a course exercise and impresses nobody on its own. The claim is narrower and checkable: <b>trained on 17,011 real products of purchase history, measured against the baselines that matter, on a laptop, in four seconds, with nothing uploaded.</b> Say the numbers, not the fact of it.</p>
+</section>
+
 <footer>
-  Shishya Handbook · 4 September 2026 · 19,845 lines across 84 tracked files · 51 commits<br>
+  Shishya Handbook · 6 September 2026 · 20,835 lines across 91 tracked files · 53 commits<br>
   Everything marked verified was checked against source data, not merely observed to run.
 </footer>
 

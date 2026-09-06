@@ -192,6 +192,15 @@ in the guest — it has three states, because *unknown* is its own answer when
 the sandbox is down. It used to be a variable initialised to `true`, which
 displayed `LOCKED` while nothing was actually blocked.
 
+**And it survives a reboot.** nftables rules live only in the running kernel,
+so until 6 September a sandbox that came back after the Mac slept came back
+*open* — found only because the panel asks the guest instead of remembering,
+and it said `OPEN`. `shishya-egress.service` re-applies the lock before the
+network comes up, so there is no window in which the sandbox is running and
+unlocked. That measured indicator is the reason the bug was ever visible; an
+interface that reported what it had been told would have hidden it for
+months.
+
 ### The undo button
 
 Whole-VM snapshots, so a rollback also catches the app that had a document
@@ -222,6 +231,8 @@ host/secrets.py      credentials, kept OUTSIDE this repo on purpose
 host/synth.py        trace → editable plain-language procedure
 
 vm/lima.yaml         the sandbox — its mount list IS the boundary
+vm/egress.sh         the network lock, re-applied before the network is up
+vm/forecast.py       demand forecasting, written from scratch in numpy
 vm/provision.sh      builds the machine, once
 vm/display.sh        Xvfb, openbox, x11vnc, noVNC — re-runnable
 vm/recorder.py       records AT-SPI events, not mouse coordinates
@@ -255,6 +266,23 @@ which performs a taught procedure against live LibreOffice and reads each
 cell back to check it landed; GST billing, tax invoices, void and returns;
 stock audit, scheduled runs, alerts, backups; clerk/head roles with approvals
 between them; a Tally XML round trip; a six-screen ERP; and the terminal.
+
+**It trains its own model.** Running someone else's model locally is ordinary
+now. `vm/forecast.py` trains a demand forecaster on the shop's own purchase
+history, on the shop's own laptop — forward pass, backpropagation, momentum
+and initialisation all written out, numpy doing array arithmetic and nothing
+else. Measured against the baselines that matter, on a month it never saw:
+
+| On a held-out month | MAE |
+|---|---|
+| **this model** | **7.469** |
+| same as last month | 10.862 |
+| recent average | 12.572 |
+
+**31.2% better than the best baseline.** 12,079 products, 17 months, 120,790
+training windows, **3.9 seconds** to train. Nothing uploaded. A forecaster
+that cannot beat *"next month looks like last month"* is worse than useless,
+so `forecast.py check` prints that comparison whether or not it flatters us.
 
 **Not proved yet, which is a different thing.**
 
