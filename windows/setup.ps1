@@ -40,6 +40,58 @@ function Run-Native([scriptblock]$block) {
     try { & $block } finally { $ErrorActionPreference = $saved }
 }
 
+# -- 0. Virtualisation -------------------------------------------------------
+# WSL 2 is a real virtual machine. Without these, `wsl --status` answers
+# perfectly happily and the first `wsl --import` fails with
+# HCS_E_SERVICE_NOT_AVAILABLE - "a required feature is not installed" - which
+# names neither the feature nor the fix. So they are checked by name, first.
+Say "Virtualisation"
+$restart = $false
+foreach ($feature in "VirtualMachinePlatform", "Microsoft-Windows-Subsystem-Linux") {
+    $f = Get-WindowsOptionalFeature -Online -FeatureName $feature
+    if ($f.State -eq "Enabled") {
+        Ok "$feature is enabled"
+    } else {
+        Say "  enabling $feature ..."
+        Enable-WindowsOptionalFeature -Online -FeatureName $feature -All -NoRestart | Out-Null
+        Todo "$feature enabled - takes effect after a restart"
+        $restart = $true
+    }
+}
+
+# The boot setting that decides whether the hypervisor runs at all. Some
+# tuning guides and older Android emulators switch it off.
+$boot = Run-Native { & bcdedit.exe /enum "{current}" 2>$null }
+if ("$boot" -match "hypervisorlaunchtype\s+Off") {
+    Run-Native { & bcdedit.exe /set hypervisorlaunchtype auto | Out-Null }
+    Todo "the hypervisor was switched off at boot - set back to auto, restart needed"
+    $restart = $true
+} else {
+    Ok "the hypervisor is allowed to start at boot"
+}
+
+# Firmware: nothing a script can change. Reported so the one fix left - the
+# BIOS/UEFI setting - is named rather than guessed at.
+$cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
+$sys = Get-CimInstance Win32_ComputerSystem
+if ($sys.HypervisorPresent) {
+    Ok "a hypervisor is running"
+} elseif ($cpu.VirtualizationFirmwareEnabled -eq $false) {
+    Todo "virtualisation is OFF in the BIOS/UEFI. Restart into the firmware"
+    Todo "settings and enable Intel VT-x / 'Intel Virtualization Technology'"
+    Todo "or AMD SVM Mode, save, and boot Windows again."
+    $restart = $true
+} elseif (-not $restart) {
+    Todo "no hypervisor is running yet - restart Windows once"
+    $restart = $true
+}
+
+if ($restart) {
+    Write-Host ""
+    Todo "RESTART WINDOWS now, then run install.ps1 (or this script) again."
+    exit 0
+}
+
 # -- 1. WSL ------------------------------------------------------------------
 Say "WSL"
 $wsl = Get-Command wsl.exe -ErrorAction SilentlyContinue

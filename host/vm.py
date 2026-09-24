@@ -94,7 +94,20 @@ def _wsl(*args, timeout=180, check=True):
     cmd = [WSL, *args]
     p = _run(cmd, timeout=timeout)
     if check and p.returncode != 0:
-        raise VMError(f"{' '.join(cmd)}\n{p.stderr.strip() or p.stdout.strip()}")
+        said = (p.stderr.strip() or p.stdout.strip()).replace("\x00", "")
+        # Windows' own words for "no virtual machine can start here" name
+        # neither the cause nor the fix. These do.
+        if "HCS_E_SERVICE_NOT_AVAILABLE" in said or "HCS_E_HYPERV_NOT_INSTALLED" in said \
+                or "Virtual Machine Platform" in said:
+            raise VMError(
+                "Windows cannot start a virtual machine, which WSL 2 needs.\n"
+                "  1. Run windows\\setup.ps1 as administrator - it enables the\n"
+                "     Virtual Machine Platform feature and the hypervisor.\n"
+                "  2. Restart Windows.\n"
+                "  3. If it still fails: virtualisation is off in the BIOS/UEFI -\n"
+                "     enable Intel VT-x or AMD SVM, then try again.\n"
+                f"(Windows said: {said.splitlines()[-1] if said else '?'})")
+        raise VMError(f"{' '.join(cmd)}\n{said}")
     return p.stdout.strip()
 
 
