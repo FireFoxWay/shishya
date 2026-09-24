@@ -52,7 +52,7 @@ foreach ($feature in "VirtualMachinePlatform", "Microsoft-Windows-Subsystem-Linu
     if ($f.State -eq "Enabled") {
         Ok "$feature is enabled"
     } else {
-        Say "  enabling $feature ..."
+        Say "  enabling $feature - Windows takes 2 to 10 minutes over this, with no progress shown ..."
         Enable-WindowsOptionalFeature -Online -FeatureName $feature -All -NoRestart | Out-Null
         Todo "$feature enabled - takes effect after a restart"
         $restart = $true
