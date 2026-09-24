@@ -62,6 +62,14 @@ function Refresh-Path {
                 [Environment]::GetEnvironmentVariable("Path", "User")
 }
 
+# Windows PowerShell 5.1 turns a program's stderr into a terminating error
+# when it is redirected and ErrorActionPreference is Stop. Exit codes decide.
+function Run-Native([scriptblock]$block) {
+    $saved = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try { & $block } finally { $ErrorActionPreference = $saved }
+}
+
 function Have-Winget { [bool](Get-Command winget.exe -ErrorAction SilentlyContinue) }
 
 function Winget-Install($id, $what) {
@@ -86,7 +94,7 @@ function Find-Python {
         if (-not $exe -or $exe.Source -like "*WindowsApps*") { continue }
         $pre = if ($name -eq "py") { @("-3") } else { @() }
         try {
-            $out = & $name @pre -c "import sys; print(sys.version_info >= (3, 10))" 2>$null
+            $out = Run-Native { & $name @pre -c "import sys; print(sys.version_info >= (3, 10))" 2>$null }
         } catch { continue }
         if ("$out".Trim() -eq "True") { return $name }
     }
@@ -95,7 +103,7 @@ function Find-Python {
 
 Write-Host ""
 if ($Here) {
-    $current = (& git -C $Dir rev-parse --abbrev-ref HEAD 2>$null)
+    $current = Run-Native { & git -C $Dir rev-parse --abbrev-ref HEAD 2>$null }
     if ($current) { $Branch = $current }
 }
 Say "Shishya - installing into $Dir (branch $Branch)"

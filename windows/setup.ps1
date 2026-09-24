@@ -29,23 +29,40 @@ function Say($t)  { Write-Host $t -ForegroundColor Cyan }
 function Ok($t)   { Write-Host "  [ ok ] $t" -ForegroundColor Green }
 function Todo($t) { Write-Host "  [todo] $t" -ForegroundColor Yellow }
 
+# Programs are run through this, never directly. Windows PowerShell 5.1,
+# with ErrorActionPreference = Stop, turns anything a program writes to stderr
+# into a terminating error once stderr is redirected - so `wsl --status` on a
+# machine without WSL, which says so on stderr, killed this script on the very
+# check meant to notice that and install it. Exit codes are what we test.
+function Run-Native([scriptblock]$block) {
+    $saved = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try { & $block } finally { $ErrorActionPreference = $saved }
+}
+
 # -- 1. WSL ------------------------------------------------------------------
 Say "WSL"
 $wsl = Get-Command wsl.exe -ErrorAction SilentlyContinue
 $ready = $false
 if ($wsl) {
-    & wsl.exe --status *> $null
+    Run-Native { & wsl.exe --status *> $null }
     $ready = ($LASTEXITCODE -eq 0)
 }
 if ($ready) {
-    & wsl.exe --update | Out-Null
-    & wsl.exe --set-default-version 2 | Out-Null
+    Run-Native { & wsl.exe --update *> $null }
+    Run-Native { & wsl.exe --set-default-version 2 *> $null }
     Ok "WSL2 is installed and up to date"
 } else {
     # --no-distribution: the sandbox brings its own Ubuntu, and a second one
     # installed alongside it would only be confusing.
-    & wsl.exe --install --no-distribution
-    Todo "WSL was just installed. RESTART WINDOWS, then run this script again."
+    Say "  installing WSL - this downloads and enables Windows features ..."
+    Run-Native { & wsl.exe --install --no-distribution }
+    if ($LASTEXITCODE -ne 0) {
+        Todo "wsl --install failed (exit $LASTEXITCODE). Check that virtualisation is"
+        Todo "enabled in the BIOS/UEFI, then run this again."
+    } else {
+        Todo "WSL was just installed. RESTART WINDOWS, then run install.ps1 again."
+    }
     exit 0
 }
 
