@@ -122,22 +122,56 @@ def _spawn(cmd):
                             start_new_session=os.name != "nt")
 
 
+# When wsl.exe hangs, it hangs for everyone who asks: the panel polls every
+# three seconds, and each poll waiting out the full timeout would pile up
+# threads behind it. After one timeout the answer is "busy" for a while,
+# without asking again.
+_BUSY = {"until": 0.0}
+
+
 def status():
     """Everything the control panel needs to paint its header, in one call."""
+    if time.time() < _BUSY["until"]:
+        return _busy()
     try:
-        p = _run([WSL, "--list", "--verbose"], timeout=30)
+        p = _run([WSL, "--list", "--verbose"], timeout=60)
     except FileNotFoundError:
         return {"state": "no-wsl", "detail": "WSL is not installed"}
+    except subprocess.TimeoutExpired:
+        # Seen on the first use after installing WSL: Windows is still
+        # finishing the install, or an update, or the WSL service is wedged.
+        # It is WSL not answering, and the message says so instead of a
+        # traceback through subprocess.
+        _BUSY["until"] = time.time() + 30
+        return _busy()
 
+    text = p.stdout.replace("\x00", "")
     # "  NAME      STATE     VERSION" then one row per distribution, the
-    # default one marked with a star. No distributions at all is a non-zero
-    # exit with a sentence instead of a table, which parses to "absent".
-    for line in p.stdout.replace("\x00", "").splitlines()[1:]:
+    # default one marked with a star.
+    for line in text.splitlines()[1:]:
         cols = line.replace("*", " ").split()
         if len(cols) >= 3 and cols[0] == NAME:
             return {"state": cols[1].lower(), "wsl": cols[2],
                     "dir": str(DISK_DIR)}
+    # Not in the table. That is "absent" only if WSL itself works: the stub
+    # wsl.exe that ships with Windows answers every question with "not
+    # installed, run wsl --install", and reading that as "no sandbox yet"
+    # sent people to create one on a machine that could not.
+    said = (text + p.stderr.replace("\x00", "")).lower()
+    if p.returncode != 0 and "no installed distributions" not in said and (
+            "not installed" in said or "--install" in said
+            or "not enabled" in said or "virtual machine platform" in said):
+        return {"state": "no-wsl",
+                "detail": "WSL is not installed or not finished installing"}
     return {"state": "absent"}
+
+
+def _busy():
+    return {"state": "wsl-busy",
+            "detail": "WSL is not answering — it is often still finishing an "
+                      "install or update. In an administrator PowerShell: "
+                      "wsl --update, then wsl --shutdown, then try again; "
+                      "if it still hangs, restart Windows."}
 
 
 def _require_running():

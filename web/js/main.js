@@ -115,6 +115,7 @@ function paintStatus(s) {
     state === "unknown" ? "connecting to the sandbox" :
     state === "no-wsl" ? "WSL is not installed — run windows\\setup.ps1" :
     state === "absent" ? "no sandbox yet — in PowerShell, run: shishya create" :
+    state === "wsl-busy" ? "WSL is not answering — wsl --update, wsl --shutdown, or restart Windows" :
     `sandbox ${state}`;
 
 }

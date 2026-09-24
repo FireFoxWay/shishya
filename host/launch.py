@@ -148,8 +148,11 @@ def run(say=print, open_browser=True):
         "  Ollama is not running and could not be started — install it from "
         "https://ollama.com/download; the apps answer through it")
 
-    state = vm.status().get("state")
-    if state == "no-wsl":
+    st = vm.status()
+    state = st.get("state")
+    if state == "wsl-busy":
+        say(st["detail"])
+    elif state == "no-wsl":
         say("The sandbox needs WSL — run windows\\setup.ps1 as administrator, once.")
     elif state == "absent":
         say("There is no sandbox yet. Create it once (slow — it downloads Ubuntu):")
@@ -172,10 +175,14 @@ def run(say=print, open_browser=True):
 
 def create(say=print):
     """First-time sandbox build, then everything else."""
-    state = vm.status().get("state")
+    st = vm.status()
+    state = st.get("state")
     if state == "no-wsl":
         say("WSL is not installed — run windows\\setup.ps1 as administrator, "
             "restart Windows, then try again.")
+        return 1
+    if state == "wsl-busy":
+        say(st["detail"])
         return 1
     # Absent, or left half-built by an earlier attempt: both are finished here.
     if state == "absent" or not vm._provisioned():
