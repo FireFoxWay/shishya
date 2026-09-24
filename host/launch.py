@@ -172,13 +172,20 @@ def run(say=print, open_browser=True):
 
 def create(say=print):
     """First-time sandbox build, then everything else."""
-    if vm.status().get("state") == "absent":
+    state = vm.status().get("state")
+    if state == "no-wsl":
+        say("WSL is not installed — run windows\\setup.ps1 as administrator, "
+            "restart Windows, then try again.")
+        return 1
+    # Absent, or left half-built by an earlier attempt: both are finished here.
+    if state == "absent" or not vm._provisioned():
         say("Creating the sandbox. This downloads Ubuntu and installs the desktop")
-        say("inside it — expect 15 to 30 minutes, once.")
+        say("inside it — expect 15 to 30 minutes, once. Leave this window open.")
         try:
-            vm.create()
-        except vm.VMError as e:
+            vm.create(say)
+        except (vm.VMError, subprocess.SubprocessError, OSError) as e:
             say(f"  failed: {e}")
+            say("  Run `shishya create` again to carry on from where it stopped.")
             return 1
         # The firewall rule is scoped to WSL's network adapter, which does not
         # exist until a WSL 2 distribution has booted — so on a fresh machine

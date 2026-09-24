@@ -202,7 +202,7 @@ def resolved_boundary():
     return resolved
 
 
-def _image():
+def _image(say=print):
     """The Ubuntu rootfs, downloaded once and checked against its SHA256SUMS."""
     arch = {"amd64": "amd64", "x86_64": "amd64",
             "arm64": "arm64", "aarch64": "arm64"}.get(platform.machine().lower())
@@ -226,45 +226,87 @@ def _image():
                 h.update(block)
         return h.hexdigest()
 
-    if not local.exists() or digest() != want:
-        part = local.with_suffix(".part")
-        with urllib.request.urlopen(IMAGES + name, timeout=60) as r, \
-                open(part, "wb") as fh:
-            shutil.copyfileobj(r, fh, 1 << 20)
-        part.replace(local)
-        if digest() != want:
-            local.unlink(missing_ok=True)
-            raise VMError(f"{name} does not match its published checksum")
+    if local.exists() and digest() == want:
+        say("  Ubuntu image already downloaded")
+        return local
+
+    part = local.with_suffix(".part")
+    with urllib.request.urlopen(IMAGES + name, timeout=60) as r, \
+            open(part, "wb") as fh:
+        total = int(r.headers.get("Content-Length") or 0)
+        got, shown = 0, -1
+        while True:
+            block = r.read(1 << 20)
+            if not block:
+                break
+            fh.write(block)
+            got += len(block)
+            # A line every 10%, not a bar: this also goes to the panel's log
+            # and to terminals that cannot redraw a line.
+            pct = got * 100 // total if total else -1
+            if pct >= 0 and pct // 10 != shown:
+                shown = pct // 10
+                say(f"  downloading Ubuntu … {pct}% of {total / 1e6:.0f} MB")
+    part.replace(local)
+    if digest() != want:
+        local.unlink(missing_ok=True)
+        raise VMError(f"{name} does not match its published checksum")
     return local
 
 
-def create():
+def _provisioned():
+    return _run(guest("test", "-f", "/var/lib/shishya-provisioned"),
+                timeout=60).returncode == 0
+
+
+def create(say=print):
     """First boot. Slow — downloads Ubuntu, then provisions the desktop.
 
     The order is the point. The boundary (wsl.conf, fstab) is written into
     the image before it has ever booted as itself, and the distribution is
     restarted before anything of ours runs in it — so no provisioning step
     ever executes in a guest that can see C:\\ or start a Windows program.
+
+    Resumable. A first build is twenty minutes of downloading, and a dropped
+    connection halfway used to leave a sandbox that existed, was not
+    provisioned, and could not be created again. Run it again and it picks up
+    after the import.
     """
     state = status()["state"]
     if state == "no-wsl":
         raise VMError("WSL is not installed — run windows\\setup.ps1 once, "
                       "as administrator")
-    if state != "absent":
-        raise VMError(f"sandbox {NAME!r} already exists")
 
-    image = _image()
-    boundary = resolved_boundary()
-    DISK_DIR.mkdir(parents=True, exist_ok=True)
-    _wsl("--import", NAME, str(DISK_DIR), str(image), "--version", "2",
-         timeout=1800)
+    if state == "absent":
+        say("Step 1 of 4: the Ubuntu image")
+        image = _image(say)
+        boundary = resolved_boundary()
+        say("Step 2 of 4: importing it into WSL, and closing off C:\\ …")
+        DISK_DIR.mkdir(parents=True, exist_ok=True)
+        _wsl("--import", NAME, str(DISK_DIR), str(image), "--version", "2",
+             timeout=1800)
+        _put("/etc/wsl.conf", boundary["wsl.conf"])
+        _put("/etc/fstab", boundary["fstab"])
+        _run(guest("mkdir", "-p", "/opt/shishya", "/home/clone/shared"), timeout=60)
+        _wsl("--terminate", NAME, check=False)
+    else:
+        if _provisioned():
+            raise VMError(f"sandbox {NAME!r} already exists and is built — "
+                          "use `shishya run`")
+        say("The sandbox exists but was never finished — carrying on from there.")
 
-    _put("/etc/wsl.conf", boundary["wsl.conf"])
-    _put("/etc/fstab", boundary["fstab"])
-    _run(guest("mkdir", "-p", "/opt/shishya", "/home/clone/shared"), timeout=60)
-    _wsl("--terminate", NAME, check=False)
-
+    say("Step 3 of 4: first boot")
     start(relock=False)
+
+    # The project folder has to be visible inside, or there is nothing to
+    # provision with. Checked here so a mount problem is named as one.
+    if _run(guest("test", "-f", "/opt/shishya/vm/provision.sh"),
+            timeout=60).returncode != 0:
+        why = _run(guest("bash", "-lc", "mount -a 2>&1; cat /etc/fstab | grep -v '^#'"),
+                   timeout=60)
+        raise VMError("the project folder is not mounted inside the sandbox.\n"
+                      + (why.stdout + why.stderr).strip()[-800:])
+
     p = _run(guest("bash", "-lc",
                    f"id clone >/dev/null 2>&1 || useradd -m -u {CLONE_UID} "
                    f"-s /bin/bash clone"), timeout=60)
@@ -273,16 +315,34 @@ def create():
 
     # Provisioning mounts nothing and reaches nothing the boundary does not
     # allow; it only needs the network, for apt. The lock goes on at the end.
-    p = _run(guest("bash", "-lc",
-                   "[ -f /var/lib/shishya-provisioned ] || "
-                   "{ bash /opt/shishya/vm/provision.sh && "
-                   "touch /var/lib/shishya-provisioned; }"),
-             timeout=3600)
-    (ROOT / "var" / "provision.log").write_text(
-        p.stdout + "\n" + p.stderr, encoding="utf-8")
-    if p.returncode != 0:
-        raise VMError("provisioning failed — see var/provision.log\n"
-                      + p.stderr.strip()[-600:])
+    # Streamed to var/provision.log, with its latest line repeated here every
+    # half minute: fifteen silent minutes look exactly like a hang.
+    say("Step 4 of 4: installing the desktop inside (15 to 25 minutes) …")
+    log_path = ROOT / "var" / "provision.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(log_path, "wb") as log:
+        proc = subprocess.Popen(
+            guest("bash", "-lc",
+                  "[ -f /var/lib/shishya-provisioned ] || "
+                  "{ bash /opt/shishya/vm/provision.sh && "
+                  "touch /var/lib/shishya-provisioned; }"),
+            stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
+            env=_env(), creationflags=_NO_WINDOW)
+        started, last = time.time(), ""
+        while proc.poll() is None:
+            time.sleep(30)
+            try:
+                tail = log_path.read_bytes()[-4000:].decode("utf-8", "replace")
+                line = next((ln.strip() for ln in reversed(tail.splitlines())
+                             if ln.strip() and not ln.startswith("+")), "")
+            except OSError:
+                line = ""
+            if line and line != last:
+                last = line
+                say(f"  [{int(time.time() - started) // 60} min] {line[:100]}")
+    if proc.returncode != 0:
+        tail = log_path.read_bytes()[-1500:].decode("utf-8", "replace")
+        raise VMError(f"provisioning failed — the full log is {log_path}\n{tail}")
     egress(True)
     return status()
 
