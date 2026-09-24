@@ -44,19 +44,45 @@ Not `click at (412, 890)`. A clerk can read that. So can a judge.
 
 ## Run it
 
-Windows 10 22H2 or Windows 11, with virtualisation enabled in the firmware,
-Python 3.10+ from python.org, and [Ollama for Windows](https://ollama.com/download).
+Windows 10 22H2 or Windows 11, with virtualisation enabled in the firmware.
+In PowerShell:
 
 ```powershell
-# once, in an administrator PowerShell: WSL2, OLLAMA_HOST, the firewall rule
-powershell -ExecutionPolicy Bypass -File windows\setup.ps1
-
-python doctor.py                                   # what works on this machine, and what does not
-python -c "import host.vm as vm; vm.create()"      # first boot: slow — downloads Ubuntu and provisions
-python demo.py                                     # everything, ready
+irm https://raw.githubusercontent.com/FireFoxWay/shishya/main/install.ps1 | iex
 ```
 
-Then open <http://localhost:8200>.
+That installs Git, Python and Ollama if they are missing (winget), clones
+this repository to `%USERPROFILE%\shishya`, puts it on your `PATH`, adds a
+**Shishya** shortcut to the desktop, and runs `windows\setup.ps1` elevated —
+one UAC prompt — for WSL2, Ollama's address and the firewall rule. Run it
+again at any time to update.
+
+Then, in a **new** PowerShell window:
+
+```powershell
+shishya create     # once: builds the sandbox — downloads Ubuntu, 15 to 30 minutes
+shishya run        # every time after: panel, model, sandbox, then opens http://localhost:8200
+shishya stop       # the sandbox and the panel
+```
+
+`shishya run` checks each piece before touching it, so running it twice just
+opens the page again. The desktop shortcut does the same thing.
+
+The repository is private for now, and a private repository has no public
+raw URL — so until it is published, clone first and run the installer from
+the checkout (Git will ask you to sign in):
+
+```powershell
+git clone https://github.com/FireFoxWay/shishya.git
+powershell -ExecutionPolicy Bypass -File shishya\install.ps1
+```
+
+Set `$env:SHISHYA_BRANCH` before the one-liner to install a branch other than
+`main`, `$env:SHISHYA_DIR` to install somewhere else.
+
+**Doing it by hand** is the same steps, and `python doctor.py` reports on
+each: `windows\setup.ps1` as administrator, then
+`python -c "import host.vm as vm; vm.create()"`, then `python demo.py`.
 
 `vm.create()` rather than `wsl --import` by hand: the boundary is two
 templates, `vm/wsl.conf` and `vm/fstab`, carrying `__SHISHYA_ROOT__`, and they
@@ -83,10 +109,7 @@ off the mount, and Git for Windows' default CRLF breaks them on line one.
 The panel is a browser on localhost, which is awkward when the laptop is in
 one country and you are in another. `shishya` is not:
 
-Add the checkout's folder to your user `PATH` once (Settings → System → About
-→ Advanced system settings → Environment Variables); `shishya.cmd` is the
-launcher. Not `setx PATH "%PATH%;…"`, which copies the system path into
-yours and truncates it at 1024 characters.
+The installer put it on your `PATH`; `shishya.cmd` is the launcher.
 
 ```powershell
 shishya                                    # the loop
@@ -241,8 +264,10 @@ and it is much faster.
 ## Layout
 
 ```
-shishya              the terminal — ask, summarise, read the dashboard
-shishya.cmd          …and its Windows launcher
+install.ps1          the one-line installer: tools, clone, PATH, shortcut, setup
+shishya.py           `shishya run` / `create` / `stop`, and the terminal
+shishya.cmd          …its launcher, so `shishya` works at any prompt
+host/launch.py       what `shishya run` does: panel, model, sandbox, browser
 doctor.py            what works on THIS machine, and what does not
 demo.py              bring everything to a known-good state
 serve.py             control panel server + JSON API

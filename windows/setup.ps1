@@ -112,5 +112,8 @@ if (Get-Command Get-NetFirewallHyperVVMSetting -ErrorAction SilentlyContinue) {
 }
 
 Write-Host ""
-Say "Next: python doctor.py, then create the sandbox:"
-Write-Host '    python -c "import host.vm as vm; vm.create()"'
+Say "Next, in a new PowerShell window:"
+Write-Host '    shishya create     # once - builds the sandbox'
+Write-Host '    shishya run        # starts everything and opens the panel'
+Write-Host '(shishya create re-runs this for the firewall rule once the sandbox'
+Write-Host 'has booted and the WSL network adapter exists - one more UAC prompt.)'

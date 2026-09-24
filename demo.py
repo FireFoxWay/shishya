@@ -30,6 +30,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "host"))
 
+import launch         # noqa: E402
 import vm             # noqa: E402
 
 PANEL = 8200
@@ -319,33 +320,6 @@ def _panel_started():
         return None
 
 
-def _stop_panel():
-    try:
-        pid = int(PIDFILE.read_text(encoding="utf-8").strip())
-    except (OSError, ValueError):
-        return
-    if os.name == "nt":
-        subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
-                       capture_output=True)
-    else:
-        try:
-            os.kill(pid, 15)
-        except OSError:
-            pass
-    PIDFILE.unlink(missing_ok=True)
-
-
-def _start_ollama():
-    """Ollama is an app, and apps quit. Started the way its installer does."""
-    local = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama"
-    for exe in (local / "ollama app.exe", local / "ollama.exe"):
-        if exe.exists():
-            args = [str(exe)] + (["serve"] if exe.name == "ollama.exe" else [])
-            vm._spawn(args)
-            return True
-    return False
-
-
 # ── reset ───────────────────────────────────────────────────────────────────
 
 def reset():
@@ -373,28 +347,13 @@ def reset():
     time.sleep(4)
 
     say("Restarting the control panel")
-    _stop_panel()
-    (ROOT / "var").mkdir(exist_ok=True)
-    log = open(ROOT / "var" / "serve.log", "ab")
-    subprocess.Popen([sys.executable, str(ROOT / "serve.py"), str(PANEL)],
-                             cwd=ROOT, stdin=subprocess.DEVNULL, stdout=log,
-                             stderr=subprocess.STDOUT,
-                             creationflags=vm._DETACHED | vm._NO_WINDOW,
-                             start_new_session=os.name != "nt")
-    for _ in range(25):
-        if get(f"http://localhost:{PANEL}/api/status", timeout=2):
-            break
-        time.sleep(1)
+    if not launch.start_panel(restart=True):
+        bad("the panel did not start — see var/serve.log")
 
-    if get(f"{MODEL}/api/tags", timeout=3) is None:
+    if not launch.model_up():
         say("Starting Ollama")
-        if _start_ollama():
-            for _ in range(30):
-                if get(f"{MODEL}/api/tags", timeout=2):
-                    break
-                time.sleep(2)
-        else:
-            bad("Ollama is not installed where its installer puts it")
+        if not launch.start_model():
+            bad("Ollama is not running and could not be started")
 
     say("Locking egress")
     get(f"http://localhost:{PANEL}/api/vm/egress", timeout=60, data={"locked": True})

@@ -2,6 +2,10 @@
 """
 Shishya, in a terminal.
 
+    shishya run               start everything and open the panel in the browser
+    shishya create            first time only: build the sandbox, then run
+    shishya stop              stop the sandbox and the panel
+
     shishya                   the terminal
     shishya board             print the dashboard and exit
     shishya sum FILE          summarise a file and exit
@@ -459,6 +463,16 @@ def main(argv):
     if not argv:
         return repl()
     cmd, *rest = argv
+    if cmd in ("run", "start", "open", "up", "create", "stop"):
+        # Imported here, not at the top: the terminal's own four things work
+        # on a machine with no WSL at all, and should not pay for it.
+        import launch
+        say = lambda t: print(INK(t))
+        if cmd == "create":
+            return launch.create(say)
+        if cmd == "stop":
+            return launch.stop(say)
+        return launch.run(say)
     if cmd in ("board", "dashboard"):
         show_board(); return 0
     if cmd in ("sum", "summarise", "summarize"):

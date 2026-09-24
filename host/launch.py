@@ -1,0 +1,210 @@
+#!/usr/bin/env python3
+"""
+Bring Shishya up and open it — the one command.
+
+    shishya run          panel, model, sandbox, browser, in that order
+    shishya stop         the sandbox and the panel, not the model
+
+Everything here was already done somewhere: demo.py restarted the panel and
+started Ollama, the panel's Start button started the sandbox. What was missing
+was one thing a person types that does all of it and ends with the page open,
+so that is all this is. Each step checks before it acts, so running it twice
+opens the page twice and changes nothing else.
+
+Order matters. The panel comes first because it is the thing that reports on
+everything else — if the sandbox then fails to start, the page is already
+there saying so, instead of a terminal full of text nobody is reading.
+"""
+
+import os
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+import webbrowser
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "host"))
+
+import vm             # noqa: E402
+
+PORT = int(os.environ.get("SHISHYA_PORT", "8200"))
+PANEL = f"http://localhost:{PORT}"
+MODEL = "http://localhost:11434"
+PIDFILE = ROOT / "var" / "serve.pid"      # written by serve.py itself
+
+
+def _up(url, timeout=3):
+    try:
+        with urllib.request.urlopen(url, timeout=timeout):
+            return True
+    except (urllib.error.URLError, OSError):
+        return False
+
+
+def _wait(url, seconds):
+    end = time.time() + seconds
+    while time.time() < end:
+        if _up(url, timeout=2):
+            return True
+        time.sleep(1)
+    return False
+
+
+def panel_up():
+    return _up(f"{PANEL}/api/status")
+
+
+def stop_panel():
+    try:
+        pid = int(PIDFILE.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return False
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
+                       capture_output=True, creationflags=vm._NO_WINDOW)
+    else:
+        try:
+            os.kill(pid, 15)
+        except OSError:
+            pass
+    PIDFILE.unlink(missing_ok=True)
+    return True
+
+
+def start_panel(restart=False):
+    """serve.py, detached, logging to var/serve.log. True once it answers."""
+    if panel_up() and not restart:
+        return True
+    stop_panel()
+    (ROOT / "var").mkdir(exist_ok=True)
+    # pythonw on Windows where there is one: no console window left open for
+    # a server nobody needs to look at. The log is where its output goes.
+    exe = Path(sys.executable)
+    quiet = exe.with_name("pythonw.exe")
+    python = str(quiet if os.name == "nt" and quiet.exists() else exe)
+    with open(ROOT / "var" / "serve.log", "ab") as log:
+        subprocess.Popen([python, str(ROOT / "serve.py"), str(PORT)], cwd=ROOT,
+                         stdin=subprocess.DEVNULL, stdout=log,
+                         stderr=subprocess.STDOUT,
+                         creationflags=vm._DETACHED | vm._NO_WINDOW,
+                         start_new_session=os.name != "nt")
+    return _wait(f"{PANEL}/api/status", 25)
+
+
+def model_up():
+    return _up(f"{MODEL}/api/tags")
+
+
+def start_model():
+    """Ollama is an app, and apps quit. Started the way its installer does."""
+    if model_up():
+        return True
+    local = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama"
+    for exe in (local / "ollama app.exe", local / "ollama.exe"):
+        if exe.exists():
+            vm._spawn([str(exe)] + (["serve"] if exe.name == "ollama.exe" else []))
+            return _wait(f"{MODEL}/api/tags", 60)
+    return False
+
+
+def sandbox_reaches_model():
+    """Asked from inside, through the lock, the way the apps will ask."""
+    try:
+        p = vm._run(vm.as_clone(
+            "cd /opt/shishya/vm/shell && python3 -c \"import common, "
+            "urllib.request as u; u.urlopen(common.HOST + '/api/tags', "
+            "timeout=5); print('yes')\""), timeout=40)
+        return p.stdout.strip().endswith("yes")
+    except (subprocess.SubprocessError, OSError):
+        return False
+
+
+def elevated_setup():
+    """windows\\setup.ps1 as administrator — one UAC prompt, and waited for."""
+    if os.name != "nt":
+        return False
+    script = ROOT / "windows" / "setup.ps1"
+    p = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-Command",
+         "Start-Process powershell.exe -Verb RunAs -Wait -ArgumentList "
+         f"'-NoProfile','-ExecutionPolicy','Bypass','-File','\"{script}\"'"],
+        creationflags=vm._NO_WINDOW)
+    return p.returncode == 0
+
+
+def run(say=print, open_browser=True):
+    """The whole thing. Returns 0 when the page opened onto a working panel."""
+    say("Starting the control panel …")
+    if not start_panel():
+        say(f"  the panel did not start — see {ROOT / 'var' / 'serve.log'}")
+        return 1
+    say(f"  {PANEL}")
+
+    say("Starting the model …")
+    say("  Ollama is answering" if start_model() else
+        "  Ollama is not running and could not be started — install it from "
+        "https://ollama.com/download; the apps answer through it")
+
+    state = vm.status().get("state")
+    if state == "no-wsl":
+        say("The sandbox needs WSL — run windows\\setup.ps1 as administrator, once.")
+    elif state == "absent":
+        say("There is no sandbox yet. Create it once (slow — it downloads Ubuntu):")
+        say("  shishya create")
+    elif state != "running":
+        say("Starting the sandbox … (up to a minute)")
+        try:
+            vm.start()
+            say("  running, network locked")
+        except (vm.VMError, subprocess.SubprocessError, OSError) as e:
+            say(f"  it did not start: {e}")
+    else:
+        say("The sandbox is already running")
+
+    if open_browser:
+        webbrowser.open(PANEL)
+    say(f"Open: {PANEL}")
+    return 0
+
+
+def create(say=print):
+    """First-time sandbox build, then everything else."""
+    if vm.status().get("state") == "absent":
+        say("Creating the sandbox. This downloads Ubuntu and installs the desktop")
+        say("inside it — expect 15 to 30 minutes, once.")
+        try:
+            vm.create()
+        except vm.VMError as e:
+            say(f"  failed: {e}")
+            return 1
+        # The firewall rule is scoped to WSL's network adapter, which does not
+        # exist until a WSL 2 distribution has booted — so on a fresh machine
+        # setup.ps1 could not add it the first time. Now it can.
+        if start_model() and not sandbox_reaches_model():
+            say("  the sandbox cannot reach the model yet — finishing the firewall")
+            say("  rule (one administrator prompt) …")
+            elevated_setup()
+            say("  the model is reachable from the sandbox" if sandbox_reaches_model()
+                else "  still unreachable — restart Ollama from the tray, then "
+                     "python demo.py check")
+        say("  done. Taking the clean snapshot the undo button returns to …")
+        vm.snapshot(vm.CLEAN_TAG)
+    return run(say)
+
+
+def stop(say=print):
+    if vm.status().get("state") == "running":
+        say("Stopping the sandbox …")
+        vm.stop()
+    if stop_panel():
+        say("Stopped the control panel")
+    say("Stopped. Ollama is left running; quit it from the tray if you want.")
+    return 0
+
+
+if __name__ == "__main__":
+    what = sys.argv[1] if len(sys.argv) > 1 else "run"
+    sys.exit({"run": run, "create": create, "stop": stop}.get(what, run)())

@@ -5,8 +5,8 @@ setlocal
 set PYTHONUTF8=1
 where py >nul 2>nul
 if %errorlevel%==0 (
-  py -3 "%~dp0shishya" %*
+  py -3 "%~dp0shishya.py" %*
 ) else (
-  python "%~dp0shishya" %*
+  python "%~dp0shishya.py" %*
 )
 exit /b %errorlevel%
