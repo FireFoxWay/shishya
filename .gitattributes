@@ -9,6 +9,9 @@
 *.bat  text eol=crlf
 *.ps1  text eol=crlf
 
+# Data is kept byte for byte, whatever line endings it arrived with.
+*.csv  -text
+
 *.pdf  binary
 *.xlsx binary
 *.png  binary
