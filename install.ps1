@@ -68,9 +68,13 @@ function Winget-Install($id, $what) {
     if (-not (Have-Winget)) {
         Fail "$what is missing and winget is not available - install $what by hand, then run this again"
     }
-    Say "  installing $what ..."
+    # Not piped anywhere: winget draws its progress bar only when it owns the
+    # console, and Ollama is a download of a gigabyte or more. Piped, the
+    # window sat on "Downloading ..." with no movement for minutes and looked
+    # hung.
+    Say "  installing $what - this can take several minutes, watch the progress bar ..."
     & winget.exe install --id $id -e --source winget --silent `
-        --accept-package-agreements --accept-source-agreements | Out-Host
+        --accept-package-agreements --accept-source-agreements
     Refresh-Path
 }
 
@@ -90,6 +94,10 @@ function Find-Python {
 }
 
 Write-Host ""
+if ($Here) {
+    $current = (& git -C $Dir rev-parse --abbrev-ref HEAD 2>$null)
+    if ($current) { $Branch = $current }
+}
 Say "Shishya - installing into $Dir (branch $Branch)"
 
 # -- 1. Git and Python -------------------------------------------------------
