@@ -2,10 +2,13 @@
 """
 Shishya, in a terminal.
 
-    ./shishya                 the terminal
-    ./shishya board           print the dashboard and exit
-    ./shishya sum FILE        summarise a file and exit
-    ./shishya ask "..."       one question and exit
+    shishya                   the terminal
+    shishya board             print the dashboard and exit
+    shishya sum FILE          summarise a file and exit
+    shishya ask "..."         one question and exit
+
+On Windows `shishya` is shishya.cmd, beside this file; put the checkout on
+your PATH and it works from any prompt.
 
 Why this exists: the laptop with the model on it is somewhere, and you are
 somewhere else. The control panel is a browser on localhost, so reaching it
@@ -50,6 +53,19 @@ PANEL = os.environ.get("SHISHYA_PANEL", "http://localhost:8200")
 # Colour is switched off rather than degraded when the terminal cannot take
 # it: NO_COLOR is honoured, a pipe gets plain text, and a dumb TERM gets plain
 # text. Escape codes in a log file help nobody.
+
+# Windows: the console draws escape codes only once virtual-terminal
+# processing is on, and os.system("") is the standard-library way to switch it
+# on. And it writes in the console's code page unless told otherwise — cp437
+# or cp1252, neither of which has a rupee sign, so the first price printed
+# would raise. Both fixed here, before anything is written.
+if os.name == "nt":
+    os.system("")
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except AttributeError:
+        pass
 
 TTY = sys.stdout.isatty()
 COLOUR = TTY and not os.environ.get("NO_COLOR") and os.environ.get("TERM") != "dumb"

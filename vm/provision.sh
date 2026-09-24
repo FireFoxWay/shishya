@@ -2,7 +2,7 @@
 # ============================================================================
 # SHISHYA — builds the clone's desktop, inside the VM.
 #
-# Runs once, on first `limactl start`. Everything here exists to give the
+# Runs once, from host/vm.py create(), in a fresh WSL2 Ubuntu 24.04. Everything here exists to give the
 # clone a real GUI to work in and to give us two ways to see and drive it:
 #
 #   noVNC  (port 6080)  — the pixels, streamed into your browser
@@ -27,7 +27,10 @@ apt-get update
 # Virtual display + a window manager light enough to boot in a second.
 # Openbox over anything heavier: fewer animations means less visual noise for
 # the recorder, and window titles stay stable between runs.
+# The WSL image is leaner than the cloud image the Mac build started from:
+# the lock, the probes and the clone's account need these named outright.
 apt-get install -y --no-install-recommends \
+  sudo nftables iproute2 curl ca-certificates dbus-x11 \
   xvfb x11vnc openbox xterm x11-utils xdotool scrot \
   novnc websockify \
   python3-pip python3-venv python3-tk \
@@ -42,20 +45,21 @@ apt-get install -y --no-install-recommends \
 # is not root — if the agent goes wrong we want it to fail small.
 id clone &>/dev/null || useradd -m -s /bin/bash clone
 
-# Lima creates /home/clone first, as the parent of the virtiofs mount, so
-# `useradd -m` finds it already there and leaves it owned by root. Without
+# host/vm.py creates the account first, with the uid the shared folder is
+# mounted as. /home/clone exists before that, as the parent of the drvfs
+# mount in /etc/fstab, so `useradd -m` finds it and leaves it owned by root. Without
 # this the clone cannot write to its own home and nothing works.
 # Non-recursive on purpose: -R would descend into the mount and fail.
 chown clone:clone /home/clone
-# .config too, recursively. Lima creates parts of the home before useradd
+# .config too, recursively. Parts of the home can exist before useradd
 # runs, leaving directories owned by root — and LibreOffice refuses to start
 # with "User installation could not be completed" when it cannot write its
 # profile there. The message names nothing about permissions.
 install -d -o clone -g clone /home/clone/.config
 chown -R clone:clone /home/clone/.config
 
-# NOT /home/clone/shared — that is the virtiofs mountpoint, and chowning a
-# virtiofs mount fails with EPERM. Its ownership comes from the host side.
+# NOT /home/clone/shared — that is the drvfs mountpoint, and chowning it
+# fails with EPERM. Its ownership comes from the uid= option in /etc/fstab.
 # dconf needs its directory to exist before gsettings can write anything,
 # and without gsettings the toolkit-accessibility flag stays false — which
 # leaves GTK apps registering with AT-SPI while exposing no widgets at all.
@@ -120,7 +124,7 @@ bash /opt/shishya/vm/display.sh --all
 
 # python-pptx is not packaged for 24.04. --break-system-packages is fine
 # here and only here: this is a disposable sandbox whose entire filesystem is
-# one `cp -c` away from being restored.
+# one snapshot copy away from being restored.
 pip3 install --break-system-packages --quiet python-pptx || \
   echo "shishya: WARNING python-pptx unavailable — PowerPoint output disabled"
 
@@ -173,7 +177,7 @@ UNIT
 # The network lock, re-applied at every boot.
 #
 # nftables rules live in the running kernel and nowhere else, so a VM that
-# came back from the Mac sleeping came back with no rules at all — open. The
+# came back from the laptop sleeping came back with no rules at all — open. The
 # panel reported it honestly and that is the only reason it was ever noticed.
 # Coming back locked is the safe default; coming back open is not.
 #

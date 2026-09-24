@@ -1,107 +1,339 @@
 #!/usr/bin/env python3
 """
-Shishya — host-side control of the clone's sandbox.
+Shishya — host-side control of the clone's sandbox, on Windows.
 
-Thin wrapper over `limactl`. Everything the control panel can do to the VM
-goes through here so that every state change lands in the ledger, including
-the ones that happen from the command line.
+The sandbox is a WSL2 distribution of its own, called `shishya`, and this is
+a thin wrapper over `wsl.exe`. Everything the control panel can do to it goes
+through here so that every state change lands in the ledger, including the
+ones that happen from the command line.
+
+It used to be Lima on a Mac. What carried over unchanged is everything inside
+the guest — the same Ubuntu 24.04, the same systemd units, the same display
+stack, recorder and executor. What changed is the wrapper around it, and the
+three things Lima gave for free that WSL has to be told:
+
+  the boundary   WSL mounts every Windows drive at /mnt/c and lets the guest
+                 run Windows programs. Both are switched off in vm/wsl.conf,
+                 and the only two folders the clone can see are named in
+                 vm/fstab — the same two lima.yaml used to name.
+  the host       there is no host.lima.internal. The model is reached at the
+                 guest's default gateway, which WSL's NAT points at Windows.
+  staying up     a WSL distribution stops a few seconds after its last
+                 wsl.exe session ends, systemd or not. start() leaves one
+                 session holding it open, and stop() is what ends it.
 """
 
+import hashlib
 import json
+import os
+import platform
 import re
+import shutil
 import subprocess
 import sys
 import time
+import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-CONFIG = ROOT / "vm" / "lima.yaml"
 NAME = "shishya"
+WSL = "wsl.exe"
+
+# The templates for the boundary. Both carry __SHISHYA_ROOT__, filled in with
+# this checkout's own path when the sandbox is created.
+WSL_CONF = ROOT / "vm" / "wsl.conf"
+FSTAB = ROOT / "vm" / "fstab"
+
+# The clone's uid is fixed because the shared folder is mounted with it, and
+# /etc/fstab is read at boot — before the account exists on the first one.
+CLONE_UID = 1500
+
+# Where the sandbox's disk lives. Deliberately NOT under the repository: the
+# whole checkout is mounted into the guest at /opt/shishya, and a disk image
+# of the sandbox — snapshots included — is not something the clone should be
+# able to read, even of itself.
+STATE = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / "shishya"
+DISK_DIR = STATE / "disk"
+DISK = DISK_DIR / "ext4.vhdx"
+SNAPS = STATE / "snapshots"
+
+# Canonical's WSL image of the same release the Mac build ran. The checksum
+# is fetched beside it and checked: this file becomes a whole machine.
+IMAGES = "https://cloud-images.ubuntu.com/wsl/releases/24.04/current/"
 
 # The tag we roll back to. Taken once, immediately after provisioning, before
 # the clone has ever run — so "undo" always means "the way it was".
 CLEAN_TAG = "clean"
+
+# No console window flashing up for every poll. Zero off Windows, where none
+# of this runs anyway but the module still has to import (doctor, tests).
+_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+_DETACHED = (getattr(subprocess, "DETACHED_PROCESS", 0)
+             | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
 
 
 class VMError(RuntimeError):
     pass
 
 
-def _lima(*args, timeout=180, check=True):
-    cmd = ["limactl", *args]
-    p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+def _env():
+    # wsl.exe writes its own messages in UTF-16 unless told otherwise, and
+    # `wsl -l` read as UTF-8 comes back with a NUL between every letter.
+    return dict(os.environ, WSL_UTF8="1")
+
+
+def _run(cmd, timeout=180, input=None):
+    """One wsl.exe call. UTF-8 named, never the locale's: the guest prints
+    rupee signs, and Windows' default is cp1252."""
+    return subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", timeout=timeout, input=input,
+                          env=_env(), creationflags=_NO_WINDOW)
+
+
+def _wsl(*args, timeout=180, check=True):
+    cmd = [WSL, *args]
+    p = _run(cmd, timeout=timeout)
     if check and p.returncode != 0:
         raise VMError(f"{' '.join(cmd)}\n{p.stderr.strip() or p.stdout.strip()}")
     return p.stdout.strip()
 
 
+def guest(*argv, user="root"):
+    """The command line that runs argv inside the sandbox.
+
+    --exec, not the default shell: without it wsl.exe hands the arguments to
+    a Linux shell that parses them a second time, and a script that was
+    quoted correctly once is not quoted correctly twice.
+    """
+    return [WSL, "-d", NAME, "-u", user, "--cd", "/", "--exec", *argv]
+
+
+def as_clone(script):
+    """A login shell as the clone, with the desktop's environment loaded."""
+    return guest("sudo", "-u", "clone", "bash", "-lc",
+                 f"set -a; . /etc/shishya.env; set +a; {script}")
+
+
+def _spawn(cmd):
+    """Start something that must outlive this call, and this process."""
+    return subprocess.Popen(cmd, stdin=subprocess.DEVNULL,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                            env=_env(), creationflags=_DETACHED | _NO_WINDOW,
+                            start_new_session=os.name != "nt")
+
+
 def status():
     """Everything the control panel needs to paint its header, in one call."""
     try:
-        raw = _lima("list", "--json", check=False)
+        p = _run([WSL, "--list", "--verbose"], timeout=30)
     except FileNotFoundError:
-        return {"state": "no-lima", "detail": "limactl not installed"}
+        return {"state": "no-wsl", "detail": "WSL is not installed"}
 
-    for line in raw.splitlines():
-        if not line.strip():
-            continue
-        vm = json.loads(line)
-        if vm.get("name") == NAME:
-            return {
-                "state": vm.get("status", "Unknown").lower(),
-                "cpus": vm.get("cpus"),
-                "memory": vm.get("memory"),
-                "dir": vm.get("dir"),
-            }
+    # "  NAME      STATE     VERSION" then one row per distribution, the
+    # default one marked with a star. No distributions at all is a non-zero
+    # exit with a sentence instead of a table, which parses to "absent".
+    for line in p.stdout.replace("\x00", "").splitlines()[1:]:
+        cols = line.replace("*", " ").split()
+        if len(cols) >= 3 and cols[0] == NAME:
+            return {"state": cols[1].lower(), "wsl": cols[2],
+                    "dir": str(DISK_DIR)}
     return {"state": "absent"}
 
 
-def resolved_config():
-    """vm/lima.yaml with this checkout's own path filled in.
+def _require_running():
+    # wsl.exe starts a stopped distribution to run a command in it, and one
+    # started that way has no session holding it up and no egress re-check —
+    # it boots, answers, and stops again ten seconds later. So a stopped
+    # sandbox is refused here, the way `limactl shell` used to refuse.
+    if status().get("state") != "running":
+        raise VMError("the sandbox is not running — press Start first")
 
-    The mount list in that file IS the security boundary, and it used to name
-    one developer's home directory in full. Anybody else who cloned the
-    repository got a sandbox mounting a path that did not exist on their
-    machine — the boundary was correct for exactly one laptop.
 
-    The template carries __SHISHYA_ROOT__; the resolved copy is written to
-    var/, which is not tracked, because it is true of this machine only.
+def _in_guest(cmd, timeout=120, input=None):
+    _require_running()
+    return _run(cmd, timeout=timeout, input=input)
 
-    as_posix(): limactl wants forward slashes even where the host does not.
+
+def _put(path, text):
+    """Write one file inside the sandbox, as root.
+
+    Bytes, not text: a text-mode pipe on Windows turns every \\n into \\r\\n,
+    and a wsl.conf or fstab with carriage returns in it is read wrongly
+    rather than rejected.
     """
-    text = CONFIG.read_text(encoding="utf-8").replace("__SHISHYA_ROOT__",
-                                                      ROOT.as_posix())
-    out = ROOT / "var" / "lima.yaml"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(text, encoding="utf-8")
-    return out
+    p = subprocess.run(guest("sh", "-c", f"cat > {path}"),
+                       input=text.replace("\r\n", "\n").encode("utf-8"),
+                       capture_output=True, timeout=60, env=_env(),
+                       creationflags=_NO_WINDOW)
+    if p.returncode != 0:
+        raise VMError(f"could not write {path}: "
+                      f"{p.stderr.decode('utf-8', 'replace').strip()}")
+
+
+def _drvfs(path):
+    """A Windows path as /etc/fstab wants it: forward slashes, and a space
+    written as \\040, because a space is the field separator."""
+    text = Path(path).as_posix()
+    if text.startswith("//"):
+        raise VMError("the checkout is on a network share; put it on a local "
+                      "drive — drvfs cannot mount a UNC path from fstab")
+    return text.replace(" ", "\\040")
+
+
+def resolved_boundary():
+    """vm/wsl.conf and vm/fstab with this checkout's own path filled in.
+
+    The mount list IS the security boundary, and on the Mac it used to name
+    one developer's home directory in full — correct for exactly one laptop.
+    Both files are templates; the resolved copies are written to var/ so the
+    boundary this machine actually got can be read back, and are what gets
+    installed into the guest.
+    """
+    out = ROOT / "var"
+    out.mkdir(parents=True, exist_ok=True)
+    root = _drvfs(ROOT)
+    resolved = {}
+    for src, name in ((WSL_CONF, "wsl.conf"), (FSTAB, "fstab")):
+        text = (src.read_text(encoding="utf-8")
+                .replace("__SHISHYA_ROOT__", root)
+                .replace("__CLONE_UID__", str(CLONE_UID)))
+        (out / name).write_text(text, encoding="utf-8")
+        resolved[name] = text
+    return resolved
+
+
+def _image():
+    """The Ubuntu rootfs, downloaded once and checked against its SHA256SUMS."""
+    arch = {"amd64": "amd64", "x86_64": "amd64",
+            "arm64": "arm64", "aarch64": "arm64"}.get(platform.machine().lower())
+    if not arch:
+        raise VMError(f"no Ubuntu WSL image for {platform.machine()}")
+    name = f"ubuntu-noble-wsl-{arch}-wsl.rootfs.tar.gz"
+    local = STATE / name
+    STATE.mkdir(parents=True, exist_ok=True)
+
+    with urllib.request.urlopen(IMAGES + "SHA256SUMS", timeout=60) as r:
+        sums = r.read().decode("utf-8")
+    want = next((ln.split()[0] for ln in sums.splitlines()
+                 if ln.strip().endswith(name)), None)
+    if not want:
+        raise VMError(f"{name} is not listed in {IMAGES}SHA256SUMS")
+
+    def digest():
+        h = hashlib.sha256()
+        with open(local, "rb") as fh:
+            for block in iter(lambda: fh.read(1 << 20), b""):
+                h.update(block)
+        return h.hexdigest()
+
+    if not local.exists() or digest() != want:
+        part = local.with_suffix(".part")
+        with urllib.request.urlopen(IMAGES + name, timeout=60) as r, \
+                open(part, "wb") as fh:
+            shutil.copyfileobj(r, fh, 1 << 20)
+        part.replace(local)
+        if digest() != want:
+            local.unlink(missing_ok=True)
+            raise VMError(f"{name} does not match its published checksum")
+    return local
 
 
 def create():
-    """First boot. Slow — pulls the Ubuntu cloud image, then provisions."""
-    if status()["state"] != "absent":
-        raise VMError(f"VM {NAME!r} already exists")
-    _lima("start", "--tty=false", f"--name={NAME}", str(resolved_config()),
-          timeout=1800)
+    """First boot. Slow — downloads Ubuntu, then provisions the desktop.
+
+    The order is the point. The boundary (wsl.conf, fstab) is written into
+    the image before it has ever booted as itself, and the distribution is
+    restarted before anything of ours runs in it — so no provisioning step
+    ever executes in a guest that can see C:\\ or start a Windows program.
+    """
+    state = status()["state"]
+    if state == "no-wsl":
+        raise VMError("WSL is not installed — run windows\\setup.ps1 once, "
+                      "as administrator")
+    if state != "absent":
+        raise VMError(f"sandbox {NAME!r} already exists")
+
+    image = _image()
+    boundary = resolved_boundary()
+    DISK_DIR.mkdir(parents=True, exist_ok=True)
+    _wsl("--import", NAME, str(DISK_DIR), str(image), "--version", "2",
+         timeout=1800)
+
+    _put("/etc/wsl.conf", boundary["wsl.conf"])
+    _put("/etc/fstab", boundary["fstab"])
+    _run(guest("mkdir", "-p", "/opt/shishya", "/home/clone/shared"), timeout=60)
+    _wsl("--terminate", NAME, check=False)
+
+    start(relock=False)
+    p = _run(guest("bash", "-lc",
+                   f"id clone >/dev/null 2>&1 || useradd -m -u {CLONE_UID} "
+                   f"-s /bin/bash clone"), timeout=60)
+    if p.returncode != 0:
+        raise VMError(f"could not create the clone's account: {p.stderr.strip()}")
+
+    # Provisioning mounts nothing and reaches nothing the boundary does not
+    # allow; it only needs the network, for apt. The lock goes on at the end.
+    p = _run(guest("bash", "-lc",
+                   "[ -f /var/lib/shishya-provisioned ] || "
+                   "{ bash /opt/shishya/vm/provision.sh && "
+                   "touch /var/lib/shishya-provisioned; }"),
+             timeout=3600)
+    (ROOT / "var" / "provision.log").write_text(
+        p.stdout + "\n" + p.stderr, encoding="utf-8")
+    if p.returncode != 0:
+        raise VMError("provisioning failed — see var/provision.log\n"
+                      + p.stderr.strip()[-600:])
+    egress(True)
     return status()
 
 
-def start():
-    _lima("start", "--tty=false", NAME, timeout=600)
+def _keepalive():
+    """Hold the distribution up.
+
+    Checked before it is started, so pressing Start twice does not leave two
+    of them. pgrep is exec'd directly rather than through a shell, because a
+    shell's own command line would contain the pattern and match itself.
+    """
+    p = _run(guest("pgrep", "-f", "shishya-keepalive"), timeout=60)
+    if p.returncode == 0:
+        return
+    _spawn(guest("bash", "-c", "exec -a shishya-keepalive sleep infinity"))
+
+
+def start(relock=True):
+    state = status()["state"]
+    if state in ("absent", "no-wsl"):
+        raise VMError("there is no sandbox yet — create it first")
+    fresh = state != "running"
+    _keepalive()
+    # Booted is not ready: the display, the desktop and the egress unit are
+    # systemd's, and a panel that reports "running" before they are up shows
+    # a black screen and calls it a sandbox.
+    try:
+        _run(guest("systemctl", "is-system-running", "--wait"), timeout=180)
+    except subprocess.TimeoutExpired:
+        pass          # "degraded" or slow; the panel's own checks say which
+    if fresh and relock:
+        # egress.sh ran at boot; run it again now that the network is
+        # certainly up, so the host's exception names the right gateway.
+        egress(True)
     return status()
 
 
 def stop():
-    _lima("stop", NAME, timeout=300)
+    # Ends every session into the distribution, the keep-alive included.
+    _wsl("--terminate", NAME, timeout=120)
+    for _ in range(30):
+        if status().get("state") != "running":
+            break
+        time.sleep(1)
+    _forget_rules()
     return status()
 
 
 def shell(script, user="clone", timeout=120):
     """Run something inside the VM as the clone (never as root)."""
-    p = subprocess.run(
-        ["limactl", "shell", NAME, "--", "sudo", "-u", user, "bash", "-lc", script],
-        capture_output=True, text=True, timeout=timeout,
-    )
+    p = _in_guest(guest("sudo", "-u", user, "bash", "-lc", script), timeout=timeout)
     return {"code": p.returncode, "out": p.stdout, "err": p.stderr}
 
 
@@ -109,20 +341,12 @@ def launch_app(name):
     """Start one of the sandbox's apps, as the clone, on its display.
 
     setsid and a closed stdin matter: without them the process stays attached
-    to this ssh session and dies with it, or holds the pipe open and hangs
+    to this wsl.exe session and dies with it, or holds the pipe open and hangs
     the caller. Both have bitten us.
     """
-    script = (
-        "set -a; . /etc/shishya.env; set +a; "
-        "cd /opt/shishya/vm/shell && "
-        f"setsid python3 {name} </dev/null >/tmp/{name}.log 2>&1 & disown"
-    )
-    subprocess.Popen(
-        ["limactl", "shell", "--workdir", "/", NAME, "--",
-         "sudo", "-u", "clone", "bash", "-lc", script],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
+    _require_running()
+    _spawn(as_clone("cd /opt/shishya/vm/shell && "
+                    f"setsid python3 {name} </dev/null >/tmp/{name}.log 2>&1 & disown"))
     return {"launched": name}
 
 
@@ -156,15 +380,10 @@ def close_apps(name=None):
     display at all.
     """
     target = name if name else "_app.py"
-    subprocess.run(
-        ["limactl", "shell", "--workdir", "/", NAME, "--",
-         "sudo", "pkill", "-f", target],
-        capture_output=True, timeout=60)
+    _in_guest(guest("pkill", "-f", target), timeout=60)
     time.sleep(1)
-    left = subprocess.run(
-        ["limactl", "shell", "--workdir", "/", NAME, "--", "bash", "-lc",
-         "pgrep -u clone -f '_app.py' | wc -l"],
-        capture_output=True, text=True, timeout=30).stdout.strip()
+    left = _run(guest("bash", "-lc", "pgrep -u clone -f '_app.py' | wc -l"),
+                timeout=30).stdout.strip()
     return {"closed": target, "still_open": left}
 
 
@@ -176,12 +395,10 @@ def drive(action, text=""):
     inside the sandbox does not.
     """
     args = ["ask", text] if action == "ask" else ["read"]
-    p = subprocess.run(
-        ["limactl", "shell", "--workdir", "/", NAME, "--",
-         "sudo", "-u", "clone", "bash", "-lc",
-         "set -a; . /etc/shishya.env; set +a; cd /opt/shishya/vm && "
-         "timeout 300 python3 drive.py " + " ".join(f"'{a}'" for a in args)],
-        capture_output=True, text=True, timeout=320)
+    import shlex
+    p = _in_guest(as_clone("cd /opt/shishya/vm && timeout 300 python3 drive.py "
+                           + " ".join(shlex.quote(a) for a in args)),
+                  timeout=320)
     return {"result": (p.stdout or p.stderr).strip()}
 
 
@@ -189,7 +406,7 @@ def run_command(command, timeout=45):
     """Run a shell command inside the sandbox, as the clone.
 
     The panel controls the OS; the OS controls what lives inside it. So this
-    reaches into the sandbox and nowhere else — never the Mac. It runs as
+    reaches into the sandbox and nowhere else — never Windows. It runs as
     `clone`, which has no sudo, inside a VM whose network is off and whose
     disk is one rollback from clean. A mistyped command here costs you the
     sandbox at worst, and the sandbox is designed to be thrown away.
@@ -198,11 +415,9 @@ def run_command(command, timeout=45):
     programs and no cd that survives to the next command. It is for looking
     at things, which is what it is actually wanted for.
     """
-    p = subprocess.run(
-        ["limactl", "shell", "--workdir", "/", NAME, "--",
-         "sudo", "-u", "clone", "bash", "-lc",
-         f"cd /home/clone 2>/dev/null; {command}"],
-        capture_output=True, text=True, timeout=timeout)
+    p = _in_guest(guest("sudo", "-u", "clone", "bash", "-lc",
+                        f"cd /home/clone 2>/dev/null; {command}"),
+                  timeout=timeout)
     out = (p.stdout or "").rstrip()
     err = (p.stderr or "").rstrip()
     return {"code": p.returncode, "out": out[-8000:], "err": err[-4000:]}
@@ -262,10 +477,9 @@ def _lesson_dir(lesson_id):
 
 
 def _executor(lesson_id, *flags):
-    script = ("set -a; . /etc/shishya.env; set +a; cd /opt/shishya/vm && "
-              f"python3 executor.py {_lesson_dir(lesson_id)} {' '.join(flags)}")
-    return ["limactl", "shell", "--workdir", "/", NAME, "--",
-            "sudo", "-u", "clone", "bash", "-lc", script]
+    _require_running()
+    return as_clone("cd /opt/shishya/vm && "
+                    f"python3 executor.py {_lesson_dir(lesson_id)} {' '.join(flags)}")
 
 
 def _as_json(line):
@@ -283,8 +497,7 @@ def _as_json(line):
 def lesson_plan(lesson_id):
     """What it would do, without doing any of it. Cheap — no display work,
     just the procedure read back through the same code that performs it."""
-    p = subprocess.run(_executor(lesson_id, "--json"),
-                       capture_output=True, text=True, timeout=90)
+    p = _run(_executor(lesson_id, "--json"), timeout=90)
     for line in reversed((p.stdout or "").splitlines()):
         event = _as_json(line)
         if event:
@@ -306,7 +519,8 @@ def lesson_run(lesson_id, on_event, ask=True):
     flags = ["--run", "--json"] + (["--ask"] if ask else [])
     proc = subprocess.Popen(_executor(lesson_id, *flags),
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                            text=True, bufsize=1)
+                            text=True, encoding="utf-8", errors="replace",
+                            bufsize=1, env=_env(), creationflags=_NO_WINDOW)
     _running = proc
     try:
         for line in proc.stdout:
@@ -334,17 +548,16 @@ def lesson_stop():
     """Halt a run in progress.
 
     Two kills, because one is not enough: the local end, and the executor
-    inside the sandbox. Terminating `limactl shell` closes an ssh channel,
-    and whether that reaches the process on the far side is not something to
+    inside the sandbox. Terminating wsl.exe ends the Windows end of the
+    session, and whether that reaches the process on the far side is not something to
     discover while the clone is typing into somebody's spreadsheet.
     """
     proc = _running
     was_running = proc is not None and proc.poll() is None
     if proc is not None:
         proc.terminate()
-    subprocess.run(["limactl", "shell", "--workdir", "/", NAME, "--",
-                    "sudo", "pkill", "-f", "executor.py"],
-                   capture_output=True, timeout=60)
+    if status().get("state") == "running":
+        _run(guest("pkill", "-f", "executor.py"), timeout=60)
     return {"stopped": was_running,
             "detail": "stopped" if was_running else "nothing was running"}
 
@@ -542,15 +755,10 @@ def start_job(brief, runner="worker.py", take_inbox=True):
          "egress": net, "model": _model_for("code")}, ensure_ascii=False), encoding="utf-8")
 
     # Same launch shape as launch_app: setsid, stdin closed, disowned —
-    # the worker must outlive this ssh channel.
-    script = ("set -a; . /etc/shishya.env; set +a; cd /opt/shishya/vm && "
-              f"setsid python3 {runner} {GUEST_JOBS}/{stamp} "
-              f"</dev/null >/tmp/worker-{stamp}.log 2>&1 & disown")
-    subprocess.Popen(
-        ["limactl", "shell", "--workdir", "/", NAME, "--",
-         "sudo", "-u", "clone", "bash", "-lc", script],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        start_new_session=True)
+    # the worker must outlive this wsl.exe session.
+    _spawn(as_clone("cd /opt/shishya/vm && "
+                    f"setsid python3 {runner} {GUEST_JOBS}/{stamp} "
+                    f"</dev/null >/tmp/worker-{stamp}.log 2>&1 & disown"))
     return {"job": stamp, "files": handed}
 
 
@@ -593,7 +801,7 @@ def job_file(job_id, name):
     """Absolute path of one produced file, or raise. The two checks mirror
     the launch list: an id that matches the pattern AND exists, a bare
     filename that is really inside out/ — this endpoint hands bytes to a
-    browser and must never be steerable to any other file on the Mac."""
+    browser and must never be steerable to any other file on this computer."""
     if not JOB_ID.match(job_id or ""):
         raise VMError(f"not a job id: {job_id!r}")
     safe = Path(name or "").name
@@ -606,7 +814,7 @@ def job_file(job_id, name):
 
 # ─── Taking things back off the clone ───────────────────────────────────────
 # Files go in by being dropped on the panel; this is the way out. Everything
-# the clone makes already lives on the Mac — shared/ is a virtiofs mount, so
+# the clone makes already lives on Windows — shared/ is a drvfs mount, so
 # a report it wrote this morning is physically on this disk — but it is
 # buried in the project folder, and "it is already there, in a path you have
 # never opened" is not a feature anybody can use.
@@ -616,7 +824,7 @@ def job_file(job_id, name):
 #
 # Only what the clone was given to work with. The mount list is the security
 # model in the other direction and it is the security model in this one too:
-# a browser asking for a path is asking a program running on the Mac, and
+# a browser asking for a path is asking a program running on Windows, and
 # that program will only ever look inside shared/.
 
 TAKEABLE = {
@@ -636,7 +844,7 @@ def _inside(root, relative):
     """Resolve a browser-supplied path inside one root, or raise.
 
     resolve() then a prefix test, because "../" is only the obvious attempt:
-    a symlink inside shared/ pointing at the Mac's home directory would pass
+    a symlink inside shared/ pointing at C:\\Users would pass
     any string check and fail this one.
     """
     root = root.resolve()
@@ -703,27 +911,22 @@ def reset_display():
     Without --all, so the X server and the window manager are left alone: the
     clone's open apps and documents survive. Only the video path is rebuilt.
     """
-    p = subprocess.run(
-        ["limactl", "shell", "--workdir", "/", NAME, "--",
-         "sudo", "bash", "/opt/shishya/vm/display.sh"],
-        capture_output=True, text=True, timeout=180)
+    p = _in_guest(guest("bash", "/opt/shishya/vm/display.sh"), timeout=180)
     if p.returncode != 0:
         # Fall back to the old behaviour rather than leaving the screen down:
         # a machine provisioned before display.sh existed has no such file,
         # and "your screen is broken and so is the fix" is the worst outcome.
-        for step in (["sudo", "systemctl", "stop", "shishya-novnc", "shishya-vnc"],
-                     ["sudo", "pkill", "-9", "-f", "websockify"],
-                     ["sudo", "pkill", "-9", "-x", "x11vnc"],
-                     ["sudo", "systemctl", "start", "shishya-vnc"],
-                     ["sudo", "systemctl", "start", "shishya-novnc"]):
-            subprocess.run(["limactl", "shell", "--workdir", "/", NAME, "--", *step],
-                           capture_output=True, timeout=60)
+        for step in (["systemctl", "stop", "shishya-novnc", "shishya-vnc"],
+                     ["pkill", "-9", "-f", "websockify"],
+                     ["pkill", "-9", "-x", "x11vnc"],
+                     ["systemctl", "start", "shishya-vnc"],
+                     ["systemctl", "start", "shishya-novnc"]):
+            _run(guest(*step), timeout=60)
             time.sleep(1)
 
-    check = subprocess.run(
-        ["limactl", "shell", "--workdir", "/", NAME, "--", "bash", "-lc",
-         'echo "$(pgrep -c x11vnc) $(pgrep -cf \'websockify --web\')"'],
-        capture_output=True, text=True, timeout=30).stdout.split()
+    check = _run(guest("bash", "-lc",
+                       'echo "$(pgrep -c x11vnc) $(pgrep -cf \'websockify --web\')"'),
+                 timeout=30).stdout.split()
     return {"x11vnc": check[0] if check else "?",
             "websockify": check[1] if len(check) > 1 else "?",
             "tuned": p.returncode == 0,
@@ -731,48 +934,65 @@ def reset_display():
 
 
 # ─── The undo button ────────────────────────────────────────────────────────
-# NOT `limactl snapshot` — that is unimplemented for the `vz` driver, which
-# stores a raw disk rather than qcow2. macOS gives us something better: the
-# disk lives on APFS, so `cp -c` clones it copy-on-write. A 3.2GB image clones
-# in about 4 milliseconds and costs no extra space until blocks diverge.
+# The sandbox's whole disk is one file, ext4.vhdx, in a folder we chose when
+# the distribution was imported. A snapshot is a copy of that file taken while
+# the distribution is stopped; a rollback copies it back over the live one.
+# WSL keeps pointing at the same path, so nothing needs re-registering.
 #
-# The VM is stopped around both operations. Cloning a running disk would give
+# Not `wsl --export`: that writes a tar of the filesystem and rolling back
+# from it means unregistering and re-importing — a new distribution in all
+# but name, with the chance of losing the old one halfway through.
+#
+# Not instant either, and it is worth saying so rather than letting the old
+# "4 milliseconds" line survive the port. The Mac cloned the disk on APFS,
+# copy-on-write. NTFS has no such thing; this is a real copy of however much
+# of the disk is in use — a few GB after provisioning, tens of seconds. On a
+# Dev Drive (ReFS) Windows may block-clone it and it is much faster.
+#
+# The VM is stopped around both operations. Copying a running disk would give
 # a crash-consistent image — survivable, but "your undo button sometimes
 # replays a dirty filesystem" is not a sentence you want to say to a judge.
 
-SNAPS = Path.home() / ".lima" / NAME / "snapshots"
-DISK = Path.home() / ".lima" / NAME / "disk"
+SNAP_TAG = re.compile(r"^[A-Za-z0-9._-]{1,40}$")
+
+
+def _snap(tag):
+    # The tag arrives from the panel and names a file; same rule as a lesson.
+    if not SNAP_TAG.match(tag or "") or tag.startswith("."):
+        raise VMError(f"not a snapshot tag: {tag!r}")
+    return SNAPS / f"{tag}.vhdx"
 
 
 def _clone(src, dst):
-    """APFS copy-on-write clone. -c fails loudly rather than silently falling
-    back to a real 40GB copy, which is what we want to know about.
-
-    macOS only, and deliberately not papered over. On anything else the honest
-    failure is "this machine has no instant undo", not a 40GB copy that looks
-    like it worked — and certainly not a FileNotFoundError naming `cp`, which
-    reads like a broken install rather than a platform that does not have the
-    filesystem this depends on.
-    """
-    if sys.platform != "darwin":
-        raise VMError(
-            "snapshots need APFS copy-on-write and this is not macOS. The "
-            "sandbox still runs; the instant undo button does not. On Linux "
-            "or WSL, take the snapshot with your filesystem's own tool.")
-    subprocess.run(["cp", "-c", str(src), str(dst)], check=True, timeout=120)
+    """Copy the disk, to a .part first so a half-copied disk is never taken
+    for a whole one. Retried briefly: WSL can hold the file for a moment
+    after the distribution reports stopped."""
+    part = dst.with_name(dst.name + ".part")
+    for attempt in range(20):
+        try:
+            shutil.copyfile(src, part)
+            break
+        except PermissionError:
+            if attempt == 19:
+                raise VMError(f"{src} is still in use — is the sandbox stopped?")
+            time.sleep(1)
+    part.replace(dst)
 
 
 def snapshot(tag=CLEAN_TAG):
+    target = _snap(tag)
+    if not DISK.exists():
+        raise VMError(f"no sandbox disk at {DISK} — create the sandbox first")
     was_running = status().get("state") == "running"
     if was_running:
         stop()
     SNAPS.mkdir(parents=True, exist_ok=True)
-    target = SNAPS / f"{tag}.disk"
-    target.unlink(missing_ok=True)
-    _clone(DISK, target)
-    if was_running:
-        start()
-        _relock_if_needed()
+    try:
+        _clone(DISK, target)
+    finally:
+        if was_running:
+            start()
+            _relock_if_needed()
     return {"tag": tag, "at": time.time(), "bytes": target.stat().st_size}
 
 
@@ -792,23 +1012,24 @@ def _relock_if_needed():
 
 
 def rollback(tag=CLEAN_TAG):
-    src = SNAPS / f"{tag}.disk"
+    src = _snap(tag)
     if not src.exists():
         raise VMError(f"no snapshot tagged {tag!r} — mark one clean first")
     was_running = status().get("state") == "running"
     if was_running:
         stop()
-    DISK.unlink(missing_ok=True)
-    _clone(src, DISK)
-    if was_running:
-        start()
-        _relock_if_needed()
+    try:
+        _clone(src, DISK)
+    finally:
+        if was_running:
+            start()
+            _relock_if_needed()
     return {"tag": tag, "at": time.time(), "snapshot_taken": _snapshot_age(tag)}
 
 
 def _snapshot_age(tag=CLEAN_TAG):
     """When the snapshot was taken, so a rollback is not a leap in the dark."""
-    path = SNAPS / f"{tag}.disk"
+    path = _snap(tag)
     if not path.exists():
         return None
     return time.strftime("%d %b %H:%M", time.localtime(path.stat().st_mtime))
@@ -817,7 +1038,7 @@ def _snapshot_age(tag=CLEAN_TAG):
 def snapshots():
     if not SNAPS.exists():
         return []
-    return sorted(p.stem for p in SNAPS.glob("*.disk"))
+    return sorted(p.stem for p in SNAPS.glob("*.vhdx"))
 
 
 # ─── The network kill switch ────────────────────────────────────────────────
@@ -825,17 +1046,28 @@ def snapshots():
 # promising it: drop all egress except the host's Ollama. Applied inside the
 # guest, so the clone cannot lift it — it has no sudo.
 
-# Lima's vz NAT puts the host at .2 on the guest's subnet. Verified with
-# `limactl shell shishya -- ip route | awk '/default/{print $3}'` on first boot.
-HOST_IP = "192.168.5.2"
+# The rules themselves live in one place, vm/egress.sh, and every state is a
+# mode of it: locked, web, ssh. They used to be written out here three times
+# with a fixed host address, and in egress.sh a fourth, "kept in step" by a
+# comment. Under WSL the host's address is the guest's default gateway and
+# changes when Windows restarts, so it is looked up by the script at the
+# moment the rules are applied, never remembered.
 OLLAMA_PORT = 11434
+EGRESS = "/opt/shishya/vm/egress.sh"
+
+
+def _apply(mode):
+    p = _in_guest(guest("bash", EGRESS, mode), timeout=60)
+    _forget_rules()
+    if p.returncode != 0:
+        raise VMError(p.stderr.strip() or p.stdout.strip())
 
 
 # One read of the firewall, cached for a moment.
 #
 # The control panel asks for status every three seconds, and status used to
-# call egress_state() and browsing_state() back to back — two `limactl shell`
-# invocations, each an ssh session into the guest running the same `sudo nft
+# call egress_state() and browsing_state() back to back — two guest
+# invocations, each a session into the guest running the same `sudo nft
 # list table` and parsing the same output for different words. Measured at
 # 0.23s apiece, that is half a second of ssh-and-sudo inside the sandbox
 # every three seconds, for as long as the panel is open, competing for the
@@ -857,10 +1089,7 @@ def _rules(fresh=False):
     now = time.time()
     if not fresh and _RULES["text"] is not None and now - _RULES["at"] < _RULES_TTL:
         return _RULES["ok"], _RULES["text"]
-    p = subprocess.run(
-        ["limactl", "shell", "--workdir", "/", NAME, "--",
-         "sudo", "nft", "list", "table", "inet", "shishya"],
-        capture_output=True, text=True, timeout=30)
+    p = _run(guest("nft", "list", "table", "inet", "shishya"), timeout=30)
     _RULES.update(at=now, text=p.stdout, ok=p.returncode == 0)
     return _RULES["ok"], _RULES["text"]
 
@@ -911,40 +1140,22 @@ def browsing(on: bool):
     claim was never "this can never reach the internet" — it is "it cannot
     unless you say so, and when you do it is in the log."
     """
-    if on:
-        script = f"""
-          nft flush ruleset
-          nft add table inet shishya
-          nft add chain inet shishya out '{{ type filter hook output priority 0; policy drop; }}'
-          nft add rule inet shishya out ct state established,related accept
-          nft add rule inet shishya out oifname lo accept
-          nft add rule inet shishya out ip daddr {HOST_IP} tcp dport {OLLAMA_PORT} accept
-          nft add rule inet shishya out udp dport 53 accept
-          nft add rule inet shishya out tcp dport 53 accept
-          nft add rule inet shishya out tcp dport {{ 80, 443 }} accept
-        """
-    else:
+    if not on:
         return egress(True)
-    p = subprocess.run(
-        ["limactl", "shell", "--workdir", "/", NAME, "--", "sudo", "bash", "-lc", script],
-        capture_output=True, text=True, timeout=60,
-    )
-    if p.returncode != 0:
-        raise VMError(p.stderr.strip())
-    _forget_rules()
+    _apply("web")
     return browsing_state(fresh=True)
 
 
 def set_browsing(on: bool):
     """Grant or revoke browsing, and tell the sandbox which it is.
 
-    Refuses when the Mac itself has no network: a browser that opens onto
+    Refuses when Windows itself has no network: a browser that opens onto
     connection errors looks broken, and the honest message is that there is
     nothing to reach.
     """
     if on and not host_online():
         return {"browsing": False,
-                "detail": "this Mac is not on a network — there is nothing to browse"}
+                "detail": "this computer is not on a network — there is nothing to browse"}
     result = browsing(on)
     flag = SHARED / ".browsing"
     try:
@@ -970,26 +1181,7 @@ def ssh_out(on: bool):
     """
     if not on:
         return egress(True)
-    rules = [
-        "nft flush ruleset",
-        "nft add table inet shishya",
-        "nft add chain inet shishya out "
-        "'{ type filter hook output priority 0; policy drop; }'",
-        "nft add rule inet shishya out ct state established,related accept",
-        "nft add rule inet shishya out oifname lo accept",
-        f"nft add rule inet shishya out ip daddr {HOST_IP} "
-        f"tcp dport {OLLAMA_PORT} accept",
-        "nft add rule inet shishya out udp dport 53 accept",
-        "nft add rule inet shishya out tcp dport 53 accept",
-        "nft add rule inet shishya out tcp dport 22 accept",
-    ]
-    p = subprocess.run(
-        ["limactl", "shell", "--workdir", "/", NAME, "--",
-         "sudo", "bash", "-lc", "\n".join(rules)],
-        capture_output=True, text=True, encoding="utf-8", timeout=60)
-    if p.returncode != 0:
-        raise VMError(p.stderr.strip())
-    _forget_rules()
+    _apply("ssh")
     return ssh_state(fresh=True)
 
 
@@ -1007,7 +1199,7 @@ def ssh_state(fresh=False):
 def ssh_run(row, command, timeout=45):
     """Run one command on a saved host, from inside the sandbox.
 
-    From inside deliberately. Doing it on the Mac would be simpler and would
+    From inside deliberately. Doing it on Windows would be simpler and would
     also mean the panel reaching onto your real network from outside the box
     that is supposed to contain everything, which is the one thing this
     project argues against.
@@ -1025,11 +1217,9 @@ def ssh_run(row, command, timeout=45):
                        "first — it is a deliberate hole in the egress lock, "
                        "and switching it on is recorded in the ledger."}
     remote = " ".join(shlex.quote(a) for a in hosts.target(row))
-    p = subprocess.run(
-        ["limactl", "shell", "--workdir", "/", NAME, "--",
-         "sudo", "-u", "clone", "bash", "-lc",
-         f"{remote} {shlex.quote(command)}"],
-        capture_output=True, text=True, encoding="utf-8", timeout=timeout)
+    p = _in_guest(guest("sudo", "-u", "clone", "bash", "-lc",
+                        f"{remote} {shlex.quote(command)}"),
+                  timeout=timeout)
     return {"code": p.returncode,
             "out": (p.stdout or "").rstrip()[-8000:],
             "err": (p.stderr or "").rstrip()[-4000:]}
@@ -1037,7 +1227,7 @@ def ssh_run(row, command, timeout=45):
 
 def browsing_state(fresh=False):
     """Measured, like everything else about the lock — off the same one read
-    of the table that egress_state() uses, rather than a second ssh session
+    of the table that egress_state() uses, rather than a second session
     asking the identical question."""
     ok, text = _rules(fresh)
     if not ok:
@@ -1069,29 +1259,17 @@ def host_online():
 
 def egress(locked: bool):
     if locked:
-        script = f"""
-          nft flush ruleset
-          nft add table inet shishya
-          nft add chain inet shishya out '{{ type filter hook output priority 0; policy drop; }}'
-          nft add rule inet shishya out ct state established,related accept
-          nft add rule inet shishya out oifname lo accept
-          nft add rule inet shishya out ip daddr {HOST_IP} tcp dport {OLLAMA_PORT} accept
-        """
+        _apply("locked")
     else:
-        script = "nft flush ruleset"
-    p = subprocess.run(
-        ["limactl", "shell", NAME, "--", "sudo", "bash", "-lc", script],
-        capture_output=True, text=True, timeout=60,
-    )
-    if p.returncode != 0:
-        raise VMError(p.stderr.strip())
+        p = _in_guest(guest("nft", "flush", "ruleset"), timeout=60)
+        _forget_rules()
+        if p.returncode != 0:
+            raise VMError(p.stderr.strip())
     # Report what the guest now says, not what we asked for — and force the
     # read, because we have just made whatever is cached wrong.
-    _forget_rules()
     return egress_state(fresh=True)
 
 
 if __name__ == "__main__":
-    import sys
     fn = sys.argv[1] if len(sys.argv) > 1 else "status"
     print(json.dumps(globals()[fn](*sys.argv[2:]), indent=2, default=str))

@@ -217,9 +217,19 @@ def _csv(path, max_rows=400):
 
 
 def _pdf(path):
-    p = subprocess.run(["pdftotext", "-layout", str(path), "-"],
-                       capture_output=True, text=True, encoding="utf-8",
-                       errors="replace", timeout=120)
+    # poppler's pdftotext. It comes with the sandbox, not with Windows; out
+    # here it has to be installed (winget install oschwartz10612.Poppler) and
+    # on PATH. Said plainly rather than surfacing as a FileNotFoundError that
+    # names a program nobody has heard of.
+    try:
+        p = subprocess.run(["pdftotext", "-layout", str(path), "-"],
+                           capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=120,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except FileNotFoundError:
+        raise ValueError("reading a PDF here needs pdftotext (Poppler) on "
+                           "PATH — drop the file into the sandbox instead, "
+                           "which has it") from None
     return p.stdout
 
 

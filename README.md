@@ -3,14 +3,15 @@
 # SHISHYA · शिष्य
 
 **An apprentice that watches you do a job once, writes down what it learned
-in words you can edit, and then does that job — on your own laptop, sandboxed,
-with the network switched off.**
+in words you can edit, and then does that job — on your own Windows laptop,
+sandboxed, with the network switched off.**
 
 [![repo](https://img.shields.io/badge/github-FireFoxWay%2Fshishya-1B1B3A?logo=github)](https://github.com/FireFoxWay/shishya)
 [![runs](https://img.shields.io/badge/runs-entirely%20offline-2F7A55)](#the-network-claim)
 [![model](https://img.shields.io/badge/model-local%20via%20Ollama-3A3A7C)](#the-model)
 [![python](https://img.shields.io/badge/python-3.12%20stdlib%20only-C68414?logo=python&logoColor=white)](#run-it)
-[![sandbox](https://img.shields.io/badge/sandbox-Lima%20%C2%B7%20Apple%20vz-6E6A63)](#how-it-holds-together)
+[![platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D4?logo=windows)](#run-it)
+[![sandbox](https://img.shields.io/badge/sandbox-WSL2%20%C2%B7%20Ubuntu%2024.04-6E6A63)](#how-it-holds-together)
 
 </div>
 
@@ -43,37 +44,54 @@ Not `click at (412, 890)`. A clerk can read that. So can a judge.
 
 ## Run it
 
-```bash
-python3 doctor.py            # what works on this machine, and what does not
-brew install lima            # once
-python3 -c "import host.vm as vm; vm.create()"   # first boot: slow
-./demo.sh                    # everything, ready
+Windows 10 22H2 or Windows 11, with virtualisation enabled in the firmware,
+Python 3.10+ from python.org, and [Ollama for Windows](https://ollama.com/download).
+
+```powershell
+# once, in an administrator PowerShell: WSL2, OLLAMA_HOST, the firewall rule
+powershell -ExecutionPolicy Bypass -File windows\setup.ps1
+
+python doctor.py                                   # what works on this machine, and what does not
+python -c "import host.vm as vm; vm.create()"      # first boot: slow — downloads Ubuntu and provisions
+python demo.py                                     # everything, ready
 ```
 
 Then open <http://localhost:8200>.
 
-`vm.create()` rather than `limactl start … vm/lima.yaml` directly: the mount
-list in that file **is** the security boundary, so it is a template carrying
-`__SHISHYA_ROOT__` and gets resolved against *your* checkout into `var/`. It
-used to name one developer's home directory in full, which meant it described
-a boundary that existed on exactly one laptop.
+`vm.create()` rather than `wsl --import` by hand: the boundary is two
+templates, `vm/wsl.conf` and `vm/fstab`, carrying `__SHISHYA_ROOT__`, and they
+are resolved against *your* checkout and written into the image **before it
+has ever booted as itself**. WSL's defaults — every drive mounted at
+`/mnt/c`, and `cmd.exe` runnable from inside — are the opposite of a sandbox,
+and no step of provisioning ever runs in a guest that has them.
 
-`./demo.sh` brings the whole stack up in dependency order and is the thing to
-run when something looks wrong. It exists because a dead Xvfb presents as
-"input is broken" rather than "there is no display" — every symptom points at
-the wrong layer, and guessing which component failed wastes the time you do
-not have. `./demo.sh reset` also rolls the sandbox back to clean.
+`python demo.py` brings the whole stack up in dependency order and is the
+thing to run when something looks wrong. It exists because a dead Xvfb
+presents as "input is broken" rather than "there is no display" — every
+symptom points at the wrong layer, and guessing which component failed wastes
+the time you do not have. `python demo.py check` changes nothing;
+`python demo.py rehearse` exercises every claim below, including the ones
+specific to WSL: no `/mnt/c`, no interop, no DNS while locked.
+
+**Keep the checkout on a local drive** (not a network share), and let
+`.gitattributes` do its job: the shell scripts run inside the sandbox straight
+off the mount, and Git for Windows' default CRLF breaks them on line one.
+`doctor.py` checks both.
 
 ### The terminal
 
 The panel is a browser on localhost, which is awkward when the laptop is in
-one country and you are in another. `./shishya` is not:
+one country and you are in another. `shishya` is not:
 
-```bash
-ln -sf "$PWD/shishya" /opt/homebrew/bin/shishya    # once
-shishya                                            # the loop
-shishya board                                      # or one thing, and exit
-shishya sum ~/Downloads/sales.xlsx
+Add the checkout's folder to your user `PATH` once (Settings → System → About
+→ Advanced system settings → Environment Variables); `shishya.cmd` is the
+launcher. Not `setx PATH "%PATH%;…"`, which copies the system path into
+yours and truncates it at 1024 characters.
+
+```powershell
+shishya                                    # the loop
+shishya board                              # or one thing, and exit
+shishya sum %USERPROFILE%\Downloads\sales.xlsx
 shishya ask "what did we take last week?"
 ```
 
@@ -83,39 +101,31 @@ things. Teaching a procedure and watching the clone work need to be *seen* and
 stay in the panel.
 
 Standard library only, because this runs on a machine you have just `ssh`'d
-into. Colour switches off when it is not a terminal, so `shishya board >
-today.txt` gives you plain text.
+into (Windows' own OpenSSH server works). Colour switches off when it is not a
+terminal, so `shishya board > today.txt` gives you plain text, and output is
+UTF-8 whatever the console's code page, because every price has a `₹`.
 
-### On Windows
+### Things Windows does differently, on purpose
 
-**The sandbox does not run.** Lima is macOS and Linux; there is no Windows
-build, and the virtual display, the GTK apps, the recorder, the executor and
-the egress lock all live inside it.
+**Text is UTF-8, named every time.** Windows defaults text files to cp1252,
+and every price in this system carries a `₹`. Every text read and write in the
+repository names `encoding="utf-8"` explicitly, and `doctor.py` walks the AST
+and fails if any call has stopped doing so. **Keep it that way.**
 
-**About half the codebase does run**, and it is the half where most of the
-work is. `python doctor.py` says so specifically for your machine:
+**The model has to listen beyond loopback.** The sandbox reaches Windows at
+its NAT gateway, not 127.0.0.1, and Ollama answers on 127.0.0.1 alone unless
+`OLLAMA_HOST=0.0.0.0`. `setup.ps1` sets it and adds an inbound rule for 11434
+**on the WSL adapter only**, so your Wi-Fi does not get a model too. If every
+app in the sandbox fails to answer while `ollama run` works fine on Windows,
+this is why.
 
-| Runs on Windows | Needs macOS or Linux |
-|---|---|
-| `vm/shell/books.py` — stock, sales, margin, GST, void, returns | the Lima VM and everything in it |
-| `vm/shell/invoice.py` — GST tax invoices | the GTK desktop apps |
-| `vm/tally.py` — the Tally XML round trip | the recorder and the executor |
-| `host/{tasks,experiments,secrets,ledger,history}.py` | the egress lock (nftables) |
-| `web/` — the whole control-panel front end, no build step | APFS snapshots (macOS only) |
-| `serve.py` — the panel starts and reports "limactl not installed" | |
+**Secrets are locked by ACL, not chmod.** `0600` is a comment on Windows. The
+store at `%USERPROFILE%\.shishya` has its inheritance cut and one grant — you
+— and `demo.py check` reads the access list back.
 
-One thing to know before you write a line: **Windows defaults text files to
-cp1252, not UTF-8**, and every price in this system carries a `₹`. Saving a
-bill on a machine with a cp1252 locale used to raise `UnicodeEncodeError` in
-the middle of writing the file. Every text read and write in the repository
-now names `encoding="utf-8"` explicitly, and `doctor.py` walks the AST and
-fails if any call has stopped doing so. **Keep it that way** — the failure is
-silent on a Mac and only shows up on your machine.
-
-If you want the full sandbox, WSL2 with Ubuntu is the path, and it is real
-work rather than an afternoon: `host/vm.py` shells out to `limactl` in about
-twenty places, and under WSL you would be driving the distro itself instead of
-a VM. See §21 of the handbook.
+**NAT, not mirrored networking.** The egress lock is written for WSL's NAT
+mode. If `%USERPROFILE%\.wslconfig` sets `networkingMode=mirrored`, `doctor.py`
+says so.
 
 ---
 
@@ -144,24 +154,32 @@ should not be the control that ends the session.
 ## How it holds together
 
 ```
-YOUR MAC                          │  THE SANDBOX
+WINDOWS                           │  THE SANDBOX  (WSL2 · Ubuntu 24.04)
                                   │
   control panel  (browser)        │    Xvfb + openbox      1440×900, frozen
   serve.py       stdlib only      │    AT-SPI tree         widget names, not pixels
   Ollama         on the GPU       │    LibreOffice         warm, gtk3, accessible
   shared/        the only way in  │    recorder → executor runs as `clone`, no sudo
                                   │
-                            hypervisor
+                     WSL2 utility VM · wsl.conf · fstab
 ```
 
-Exactly three things cross that line: **the screen out** (`:6080`), **the
-model in** (`:11434`), and **one shared folder** (virtiofs). Nothing else.
+Exactly three things cross that line: **the screen out** (`:6080`, through
+WSL's localhost forwarding), **the model in** (`:11434` at the NAT gateway),
+and **one shared folder** (drvfs). Nothing else — no `/mnt/c`, no running
+Windows programs from inside.
 
 ### Three things that are load-bearing
 
-**The mount list is the security model.** The clone cannot read `~/Documents`
+**The mount list is the security model.** The clone cannot read `Documents`
 because it is not mounted — not because we check a path somewhere. Grant a
-folder by adding a line to `vm/lima.yaml`; revoke it by deleting the line.
+folder by adding a line to `vm/fstab`; revoke it by deleting the line.
+
+One honest difference from the Mac build: Lima's mounts were enforced by the
+hypervisor. WSL's are enforced by the guest's own `/etc/wsl.conf` and
+`/etc/fstab`, so root inside could mount `C:` by hand. The clone is not root
+and has no sudo, and `demo.py rehearse` checks both — the claim holds for the
+clone, which is who it is about.
 
 **The accessibility tree, not pixels.** The executor resolves "the field
 labelled *District*" instead of guessing at a screen region. LibreOffice
@@ -175,17 +193,19 @@ every trace already captured.
 
 ### The model
 
-Runs on the **host** via Ollama, reached from inside at
-`host.lima.internal:11434`. Deliberately not inside the VM: a model on
-emulated CPU instead of the Apple Silicon GPU is slow enough to sink a live
-demonstration.
+Runs on **Windows** via Ollama, reached from inside at the guest's default
+gateway, port 11434 — read from the routing table each time, because WSL's
+NAT hands out a new subnet when Windows restarts. Deliberately not inside the
+sandbox: a model without the GPU is slow enough to sink a live demonstration.
 
 ### The network claim
 
-`host/vm.py:egress(True)` drops all outbound traffic from the sandbox except
-the host's model, applied inside the guest where the clone has no sudo and
-cannot lift it. Verified: `github.com` blocked, `1.1.1.1` blocked, the model
-still answering.
+`vm/egress.sh` drops all outbound traffic from the sandbox except the host's
+model, applied inside the guest where the clone has no sudo and cannot lift
+it. It is the one place the rules are written; browsing and SSH are modes of
+it. Under WSL it also drops WSL's DNS tunnel (`10.255.255.254`, on the
+guest's own loopback), which would otherwise let a locked sandbox resolve —
+and so signal — any name on the internet.
 
 The indicator in the panel is **measured** on every poll by reading nftables
 in the guest — it has three states, because *unknown* is its own answer when
@@ -193,7 +213,7 @@ the sandbox is down. It used to be a variable initialised to `true`, which
 displayed `LOCKED` while nothing was actually blocked.
 
 **And it survives a reboot.** nftables rules live only in the running kernel,
-so until 6 September a sandbox that came back after the Mac slept came back
+so until 6 September a sandbox that came back after the laptop slept came back
 *open* — found only because the panel asks the guest instead of remembering,
 and it said `OPEN`. `shishya-egress.service` re-applies the lock before the
 network comes up, so there is no window in which the sandbox is running and
@@ -203,13 +223,18 @@ months.
 
 ### The undo button
 
-Whole-VM snapshots, so a rollback also catches the app that had a document
+Whole-disk snapshots, so a rollback also catches the app that had a document
 open and unsaved.
 
-Not `limactl snapshot` — that is unimplemented for the `vz` driver, which
-stores a raw disk. macOS offers something better: the disk lives on APFS, so
-`cp -c` clones it copy-on-write. A 3.2 GB image clones in about **4
-milliseconds** and costs no extra space until blocks diverge.
+The sandbox's disk is one file, `ext4.vhdx`, under
+`%LOCALAPPDATA%\shishya` — deliberately outside the repository, which the
+clone can read. A snapshot copies it with the sandbox stopped; a rollback
+copies it back, and WSL keeps pointing at the same path.
+
+**Not instant, and not pretending to be.** The Mac build cloned the disk on
+APFS copy-on-write in about 4 ms. NTFS has no such thing: this is a real copy
+of a few GB, tens of seconds. On a Dev Drive (ReFS) Windows may block-clone it
+and it is much faster.
 
 ---
 
@@ -217,11 +242,13 @@ milliseconds** and costs no extra space until blocks diverge.
 
 ```
 shishya              the terminal — ask, summarise, read the dashboard
+shishya.cmd          …and its Windows launcher
 doctor.py            what works on THIS machine, and what does not
-demo.sh              bring everything to a known-good state
+demo.py              bring everything to a known-good state
 serve.py             control panel server + JSON API
+windows/setup.ps1    once, as administrator: WSL2, Ollama, the firewall
 
-host/vm.py           lima wrapper: snapshot, rollback, egress lock, ssh mode
+host/vm.py           wsl.exe wrapper: create, snapshot, rollback, egress lock
 host/brain.py        asking the model and reading a file, host-side
 host/dashboard.py    the overview screen's data, assembled in one call
 host/profile.py      who is using this and what they do for a living
@@ -230,8 +257,9 @@ host/ledger.py       append-only audit log, including refusals
 host/secrets.py      credentials, kept OUTSIDE this repo on purpose
 host/synth.py        trace → editable plain-language procedure
 
-vm/lima.yaml         the sandbox — its mount list IS the boundary
-vm/egress.sh         the network lock, re-applied before the network is up
+vm/wsl.conf          no automount, no interop, systemd on
+vm/fstab             the two folders the clone can see — this IS the boundary
+vm/egress.sh         the network lock, every mode of it, re-applied at boot
 vm/forecast.py       demand forecasting, written from scratch in numpy
 vm/provision.sh      builds the machine, once
 vm/display.sh        Xvfb, openbox, x11vnc, noVNC — re-runnable
@@ -254,12 +282,12 @@ dependency at a demo table.
 
 ## Status
 
-**Works, and is checked.** `./demo.sh check` runs 24 assertions in about a
+**Works, and is checked.** `python demo.py check` runs its assertions in about a
 minute — including typing a key into a real window and reading it back, and
 asking the *guest* whether the egress lock is on rather than remembering
 what it was told.
 
-The sandbox and the clone's desktop; take-the-wheel; APFS snapshot and
+The sandbox and the clone's desktop; take-the-wheel; snapshot and
 rollback; the permission ledger; the egress lock; document Q&A over dropped
 files; document generation (`.xlsx` / `.docx` / `.pptx`); **the executor**,
 which performs a taught procedure against live LibreOffice and reads each
@@ -290,19 +318,17 @@ so `forecast.py check` prints that comparison whether or not it flatters us.
   by a script. One shopkeeper for one afternoon is worth more than any
   feature still on the list.
 - **Tally has never accepted the XML.** It passes every check that can run
-  here; that is not the same claim. It needs a Windows machine.
+  here; that is not the same claim. This is a Windows build now, so it is one
+  Tally install away.
+- **The WSL port has not been through a full demonstration yet.** Everything
+  inside the guest is the code that ran on the Mac; the wrapper around it is
+  new. Run `python demo.py rehearse` before trusting it in front of people.
 - **Nobody who reads Telugu has read the Telugu answers**, and the English
   and Telugu versions are known to differ in emphasis. Marked *do not
   demonstrate* until they have.
-- **The egress lock does not survive a VM restart.** nftables rules are
-  runtime-only and nothing re-applies them at boot, so a sandbox that comes
-  back after the Mac slept comes back *open*. The panel reports this
-  honestly, which is the only reason it was found. Until a boot service
-  fixes it, locking is a step in the pre-flight rather than a property of
-  the machine.
 - **Keyboard injection into the sandbox can die on its own.** Mouse fine,
   queries fine, every typed key silently swallowed — which stops the
-  executor dead. It happened once while the machine sat idle. `demo.sh
+  executor dead. It happened once while the machine sat idle. `demo.py
   check` types a probe and catches it; `vm/display.sh --all` fixes it.
 
 **Not public, and not yet publishable.** `shared/training/` holds a real

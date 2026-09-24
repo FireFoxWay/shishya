@@ -8,14 +8,14 @@ applies that rule to credentials, and the location is the whole design.
 
 ── Why not var/ ───────────────────────────────────────────────────────────
 
-Because the sandbox can read it. `vm/lima.yaml` mounts the entire repository
+Because the sandbox can read it. `vm/fstab` mounts the entire repository
 at /opt/shishya, so a secret in var/ is a secret the clone can `cat` — tested,
 not assumed: a canary written to var/secret-canary.txt read back from inside
 the sandbox on the first try. Anything under the repo is inside the boundary.
 
-So the store lives at ~/.shishya/secrets.json, outside the repository and
-outside every mount, with the directory and file readable only by the person
-who owns them.
+So the store lives at %UserProfile%\\.shishya\\secrets.json, outside the
+repository and outside every mount, with the directory and file readable only
+by the person who owns them.
 
 ── What this is and is not ────────────────────────────────────────────────
 
@@ -25,7 +25,8 @@ every scheduled run — or a key stored beside the thing it protects, which
 protects nothing. Saying "encrypted at rest" while doing the latter is the
 kind of claim this project exists to avoid making.
 
-What it is: a file the sandbox cannot reach, with 0600 permissions, whose
+What it is: a file the sandbox cannot reach, readable by its owner only —
+0600 on a Unix, an access list naming nobody else on Windows — whose
 values never enter a prompt, never enter the ledger, and never cross into
 shared/. The ledger records that a secret named `tally.password` was set,
 never what it was set to.
@@ -34,6 +35,7 @@ never what it was set to.
 import json
 import os
 import stat
+import subprocess
 from pathlib import Path
 
 # Deliberately outside the repository. Everything under the project directory
@@ -67,6 +69,49 @@ def _save(values):
     tmp.replace(STORE)
     os.chmod(STORE, 0o600)
     os.chmod(HOME, 0o700)
+    _owner_only(HOME, folder=True)
+    _owner_only(STORE)
+
+
+# ─── Windows ────────────────────────────────────────────────────────────────
+# chmod on Windows sets the read-only flag and nothing else; 0o600 there is
+# a comment, not a permission. The file inherits whatever the profile folder
+# grants — usually SYSTEM and Administrators as well as you. So on Windows the
+# access list is cut down to the owner by icacls, and permissions_ok() reads
+# that list back rather than a mode that means nothing.
+
+def _me():
+    user = os.environ.get("USERNAME", "")
+    domain = os.environ.get("USERDOMAIN", "")
+    return f"{domain}\\{user}" if domain else user
+
+
+def _owner_only(path, folder=False):
+    if os.name != "nt":
+        return
+    grant = f"{_me()}:(OI)(CI)F" if folder else f"{_me()}:F"
+    p = subprocess.run(["icacls", str(path), "/inheritance:r", "/grant:r", grant],
+                       capture_output=True, text=True, errors="replace")
+    if p.returncode != 0:
+        raise SecretError(f"could not restrict {path}: {p.stdout.strip() or p.stderr.strip()}")
+
+
+def _acl_holders(path):
+    """Every principal named in the file's access list, per icacls."""
+    p = subprocess.run(["icacls", str(path)], capture_output=True, text=True,
+                       errors="replace")
+    holders = []
+    first = True
+    for line in p.stdout.splitlines():
+        text = line.strip()
+        if not text or text.startswith("Successfully") or ":(" not in text:
+            continue
+        if first:
+            # The first line starts with the path itself, which has a colon.
+            text = text[len(str(path)):].strip()
+            first = False
+        holders.append(text.split(":(", 1)[0])
+    return holders
 
 
 def names():
@@ -110,6 +155,13 @@ def permissions_ok():
     """Whether the store is as private as it claims to be."""
     if not STORE.exists():
         return True, "no secrets are stored"
+    if os.name == "nt":
+        me = os.environ.get("USERNAME", "").lower()
+        others = [h for h in _acl_holders(STORE)
+                  if h.rsplit("\\", 1)[-1].lower() != me]
+        if others:
+            return False, f"secrets.json is also readable by {', '.join(others)}"
+        return True, "secrets.json is readable by its owner only"
     mode = stat.S_IMODE(STORE.stat().st_mode)
     if mode & 0o077:
         return False, f"secrets.json is mode {oct(mode)} — readable by others"

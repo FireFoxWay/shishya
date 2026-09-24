@@ -140,6 +140,7 @@ footer{margin-top:70px;padding-top:20px;border-top:1px solid var(--rule);
     <li><a href="#demo">18. Demonstrating it</a></li>
     <li><a href="#next">19. What to build next</a></li>
     <li><a href="#facts">20. Facts and constants</a></li>
+    <li><a href="#windows">21. Windows — the platform it runs on now</a></li>
   </ol>
 </nav>
 
@@ -1145,15 +1146,27 @@ allow  lesson.taught  step 2 · Type 'taught mid-run' into cell B2</code></pre>
 
 <!-- ══════════════════════════════════════════════ -->
 <section id="windows">
-  <h2><span class="num">21</span>Working on this from Windows</h2>
-  <p>Written when a second developer joined on a Windows machine. The honest summary is that <b>half of this runs there and half of it cannot</b>, and being clear about which half is worth more than any amount of shimming.</p>
+  <h2><span class="num">21</span>Windows — the platform it runs on now</h2>
+  <p>This section began as a note for a second developer on a Windows machine, and its first version said, honestly, that <b>half of this runs there and half of it cannot</b>. It has since been ported: <b>Windows is the target, and the sandbox is WSL2.</b> Everything inside the guest carried over unchanged — the same Ubuntu 24.04, the same systemd units, display stack, recorder and executor. What changed is the wrapper around it. Where the rest of this handbook says Lima, the Mac, <code>limactl</code> or APFS, read it as the history of how a decision was reached; the mechanism is the one described here.</p>
 
-  <h3>What cannot run, and why not</h3>
-  <p>The sandbox is Lima, which is macOS and Linux and has no Windows build. Everything inside it goes with it: the virtual display, the GTK apps, the recorder, the executor, the accessibility tree they ground on, and the nftables egress lock. APFS copy-on-write snapshots — the undo button — are macOS and a filesystem, not a program. <code>_clone()</code> now says exactly that rather than raising a <code>FileNotFoundError</code> naming <code>cp</code>, which reads like a broken install rather than a platform that does not have the filesystem this depends on.</p>
-  <p>WSL2 with Ubuntu is the real path to the whole thing, and it is weeks rather than an afternoon: <code>host/vm.py</code> shells out to <code>limactl</code> in about twenty places, and under WSL you would be driving the distribution itself rather than a VM inside it. Nested virtualisation under WSL exists and is not something to stake a demonstration on.</p>
+  <h3>What Lima gave for free, and WSL had to be told</h3>
+  <ul>
+    <li><b>The boundary.</b> WSL's defaults are the opposite of a sandbox: every Windows drive is mounted read-write at <code>/mnt/c</code>, and any process in the guest can start <code>cmd.exe</code> as you. <code>vm/wsl.conf</code> switches off both automount and interop, and <code>vm/fstab</code> names the only two folders that cross — the checkout read-only at <code>/opt/shishya</code>, <code>shared/</code> writable at <code>/home/clone/shared</code>, the same two <code>lima.yaml</code> used to name. <code>vm.create()</code> writes both into the fresh image and restarts it <em>before</em> any of our code runs inside, so provisioning never executes in a guest that can see <code>C:\</code>.</li>
+    <li><b>The host's address.</b> There is no <code>host.lima.internal</code>. WSL's NAT makes Windows the guest's default gateway, an address that changes when Windows restarts, so <code>vm/egress.sh</code> and <code>common.HOST</code> read it from the routing table at the moment they need it. Ollama for Windows listens on 127.0.0.1 only unless <code>OLLAMA_HOST=0.0.0.0</code>; <code>windows\setup.ps1</code> sets that and adds a firewall rule scoped to the WSL adapter, so the sandbox can reach the model and the Wi-Fi cannot.</li>
+    <li><b>DNS.</b> Newer WSL answers DNS at <code>10.255.255.254</code>, an address on the guest's own loopback, and relays queries to Windows over a channel nftables never sees. With the lock's <code>oifname lo accept</code> that would have let a locked sandbox resolve any name on the internet — enough to carry data out one query at a time. Locked mode drops that address before the loopback rule. <code>python demo.py rehearse</code> checks it by trying.</li>
+    <li><b>Staying up.</b> A WSL distribution stops a few seconds after its last <code>wsl.exe</code> session ends, systemd or not. <code>vm.start()</code> leaves one session holding it open; <code>vm.stop()</code> is <code>wsl --terminate</code>. A stopped sandbox is refused by every guest call rather than silently booted by it, because one booted that way has nobody holding it up and no egress re-check.</li>
+    <li><b>The undo button.</b> The disk is one file, <code>ext4.vhdx</code>, under <code>%LOCALAPPDATA%\shishya</code> — deliberately not under the repository, which the clone can read. A snapshot copies it with the distribution stopped. <b>Not instant:</b> NTFS has no copy-on-write, so the "4 milliseconds" of APFS is a real copy of a few GB here — tens of seconds, faster on a Dev Drive.</li>
+    <li><b>Line endings.</b> Git for Windows checks out CRLF, and a <code>provision.sh</code> with <code>\r</code> on every line fails on its first command. <code>.gitattributes</code> pins LF, and <code>doctor.py</code> checks it took.</li>
+  </ul>
+  <p>Worth being plain about one difference. On the Mac the mount list was enforced by a hypervisor that root in the guest could not argue with. Under WSL it is enforced by the guest's own <code>/etc/wsl.conf</code> and <code>/etc/fstab</code>: root inside could mount <code>C:</code> by hand. The clone is not root and has no sudo — <code>demo.py rehearse</code> checks that too — so the claim holds for the clone, which is who it was ever about. It is a weaker claim about the machine than Lima's, and it is written down here so nobody has to discover it.</p>
 
-  <h3>What does run, which is where most of the work is</h3>
-  <p>The shop's books, GST invoicing, the Tally round trip, the task and experiment records, the secret store, the ledger, and the entire control-panel front end. <code>serve.py</code> starts and reports <i>limactl not installed</i> rather than falling over, so the panel loads and every part of it that does not need the VM works. <code>python doctor.py</code> — standard library only, no bash — reports all of this for the machine it is run on, and is the first thing to run after cloning.</p>
+  <h3>Getting it running</h3>
+  <ol>
+    <li><code>windows\setup.ps1</code>, once, as administrator: WSL2, <code>OLLAMA_HOST</code>, the firewall rule. It says what it changed and what is left.</li>
+    <li><code>python doctor.py</code> — every piece above, checked by name.</li>
+    <li><code>python -c "import host.vm as vm; vm.create()"</code> — downloads Canonical's WSL image, verifies its checksum, imports it, installs the boundary, provisions. Slow once.</li>
+    <li><code>python demo.py</code> — the old <code>demo.sh</code>, in Python, because there is no bash to run it with.</li>
+  </ol>
 
   <div class="box b-bad">
     <span class="lbl">The one that actually bit</span>
@@ -1173,6 +1186,7 @@ allow  lesson.taught  step 2 · Type 'taught mid-run' into cell B2</code></pre>
     <li><code>web/</code> is plain ES modules and CSS with no build step. Edit, reload, done.</li>
     <li>The overview screen in §19 is the piece most worth having and is almost entirely front end.</li>
   </ol>
+  <p>The boundary paragraph above predates the port. <code>vm/lima.yaml</code> is gone; the same template rule applies to <code>vm/fstab</code>, resolved into <code>var/fstab</code> at creation.</p>
 </section>
 
 <!-- ══════════════════════════════════════════════ -->

@@ -113,7 +113,7 @@ function paintStatus(s) {
   $("screenMsg").textContent =
     live ? "" :
     state === "unknown" ? "connecting to the sandbox" :
-    state === "no-lima" ? "lima is not installed" :
+    state === "no-wsl" ? "WSL is not installed — run windows\\setup.ps1" :
     `sandbox ${state}`;
 
 }
@@ -361,7 +361,7 @@ $("btnTaskAlerts").onclick = e => guard(e.target, "tasks from alerts", async () 
 /* The panel shows that a secret exists and how long it is. There is no route
    that returns a value — not hidden in the page, not fetched on demand. The
    store sits outside every mount, so the sandbox cannot read it either, and
-   demo.sh check proves both on every run. */
+   demo.py check proves both on every run. */
 
 async function paintVault() {
   const box = $("vaultList");
@@ -378,7 +378,7 @@ async function paintVault() {
   }
   if (!out.secrets.length) {
     box.append(document.createTextNode(
-      "Nothing kept. Anything put here stays on this Mac — the sandbox has no path to it."));
+      "Nothing kept. Anything put here stays on this computer — the sandbox has no path to it."));
     return;
   }
   for (const sec of out.secrets) {

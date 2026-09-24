@@ -1,0 +1,16 @@
+# Git for Windows checks text out with CRLF by default. Half of this
+# repository is read by bash and Python INSIDE the sandbox, straight off the
+# drvfs mount — and a provision.sh with \r on every line fails on its first
+# command, with an error that names the command and not the line ending.
+# So text is LF everywhere, and only the files Windows itself runs are CRLF.
+* text=auto eol=lf
+
+*.cmd  text eol=crlf
+*.bat  text eol=crlf
+*.ps1  text eol=crlf
+
+*.pdf  binary
+*.xlsx binary
+*.png  binary
+*.jpg  binary
+*.npz  binary

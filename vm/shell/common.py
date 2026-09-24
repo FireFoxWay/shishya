@@ -7,7 +7,10 @@ into plain text.
 """
 
 import json
+import os
 import re
+import socket
+import struct
 import subprocess
 import urllib.error
 import urllib.request
@@ -74,9 +77,37 @@ CATALOGUE = BILLING / "catalogue.csv"     # what is stocked, and at what cost
 SALES = BILLING / "sales.csv"             # one row per line item, append-only
 
 # The model runs on the host's GPU and is reached across the sandbox
-# boundary. Inside the VM it would fall back to emulated CPU and be far too
-# slow to demo.
-HOST = "http://host.lima.internal:11434"
+# boundary. Inside the VM it would have no GPU and be far too slow to demo.
+
+
+def _model_host():
+    """Where the model is, from wherever this is running.
+
+    Inside the sandbox that is Windows, and WSL's NAT makes Windows the
+    default gateway — an address that changes when Windows restarts, so it is
+    read from the routing table rather than written down. There is no
+    host.lima.internal to lean on any more.
+
+    Out on the host (the dashboard imports this module) there is no
+    /proc/net/route, and the model is simply on localhost.
+    """
+    named = os.environ.get("SHISHYA_MODEL_HOST")
+    if named:
+        return named.rstrip("/")
+    try:
+        with open("/proc/net/route", encoding="utf-8") as fh:
+            for line in fh.readlines()[1:]:
+                f = line.split()
+                # Destination 0.0.0.0 with the gateway flag: the default route.
+                if len(f) > 3 and f[1] == "00000000" and int(f[3], 16) & 2:
+                    gw = socket.inet_ntoa(struct.pack("<I", int(f[2], 16)))
+                    return f"http://{gw}:11434"
+    except (OSError, ValueError):
+        pass
+    return "http://127.0.0.1:11434"
+
+
+HOST = _model_host()
 # The fallback when a call names no job. This was deepseek-r1:8b, and the one
 # app that forgot to name its jobs — chat, the front door — silently ran a 5GB
 # reasoning model while the Models screen showed the 14GB one the owner picked.

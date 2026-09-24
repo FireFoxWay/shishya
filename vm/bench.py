@@ -39,7 +39,7 @@ QUESTION = ("count how many products are low on stock in each category in the "
 # Verified against the file itself, not against a previous model's answer.
 TRUTH = {"total": "149", "categories": 8}
 
-HOST = "http://host.lima.internal:11434"
+HOST = common.HOST
 
 
 def installed():

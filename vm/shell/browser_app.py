@@ -15,7 +15,7 @@ recorded when it changes, and switched off again after. The clone cannot
 grant it to itself — it has no sudo and the rules live outside its reach.
 
 Opened while the network is locked, this says so and offers nothing else.
-Opened while the Mac itself has no connection, it says that instead. Both
+Opened while Windows itself has no connection, it says that instead. Both
 beat a browser that simply fails to load anything.
 """
 

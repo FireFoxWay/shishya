@@ -1,0 +1,21 @@
+# ============================================================================
+# SHISHYA — the sandbox's mount list, installed as /etc/fstab.
+#
+# This is the whole of the boundary. Add a line to grant a folder; delete one
+# to revoke it. Automount is off (vm/wsl.conf), so a Windows folder that is
+# not named here does not exist inside the sandbox.
+#
+# __SHISHYA_ROOT__ is filled in with this checkout's own path — forward
+# slashes, spaces as \040 — when the sandbox is created; the resolved copy is
+# written to var/fstab so you can read the boundary this machine actually got.
+# ============================================================================
+
+# The repo itself, read-only, so the sandbox can run its own provisioning and
+# the in-VM agent without us copying files around. Owned by root, so the
+# clone can read it and not change it even if the ro flag were lost.
+__SHISHYA_ROOT__            /opt/shishya         drvfs  ro,noatime,uid=0,gid=0,umask=022                       0 0
+
+# The only writable window into Windows. Everything the clone is allowed to
+# touch goes here. Ownership comes from these options, not from chown — the
+# same way virtiofs gave it from the host side on the Mac.
+__SHISHYA_ROOT__/shared     /home/clone/shared   drvfs  rw,noatime,uid=__CLONE_UID__,gid=__CLONE_UID__,umask=022  0 0

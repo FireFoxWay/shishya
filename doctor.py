@@ -2,18 +2,17 @@
 """
 Shishya — what works on this machine, and what does not.
 
-    python3 doctor.py          (python doctor.py on Windows)
+    python doctor.py
 
-demo.sh is the equivalent for the machine that runs the sandbox, and it is
-bash, macOS-shaped, and assumes a VM. This is the version that runs anywhere,
-in the standard library only, and its job is to tell somebody who has just
-cloned the repository which half of it they can work on today.
+The first thing to run after cloning, and the thing to run when something
+looks wrong before guessing which layer broke. Standard library only.
 
-The answer is honest rather than encouraging. The sandbox is Lima, which is
-macOS and Linux; on Windows it does not run and no amount of wishing changes
-that. What DOES run on Windows is the part where most of the work is: the
-shop's books, GST invoicing, the Tally export, the task and experiment
-records, the secret store, and the control panel's whole front end.
+This build targets Windows. The sandbox is a WSL2 distribution of its own,
+driven by host/vm.py through wsl.exe; the model is Ollama for Windows; the
+panel and the terminal are plain Python. Every one of those can be missing or
+misconfigured in a way that presents as something else — a model that is
+running but listening where the sandbox cannot reach it looks exactly like a
+broken app — so each is checked here by name.
 """
 
 import importlib.util
@@ -28,6 +27,15 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+
+# The report itself is full of dashes and box lines, and a Windows console
+# writes in its code page unless told otherwise — the doctor would fall over
+# on its own headings before diagnosing anything.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except AttributeError:
+        pass
 OK, BAD, MEH = "  [ ok ]", "  [FAIL]", "  [ -- ]"
 fails = []
 
@@ -118,36 +126,114 @@ except Exception as e:                                   # noqa: BLE001
 check("the control panel's front end", (ROOT / "web" / "index.html").is_file(),
       "web/ is plain ES modules and CSS — no build step, edit and reload")
 
-# ─── the half that needs a Mac or Linux ─────────────────────────────────────
-head("The sandbox")
-lima = shutil.which("limactl")
-check("limactl", bool(lima), lima or "not installed", fatal=False)
-if not lima:
-    if platform.system() == "Windows":
-        print("         Lima does not run on Windows. The sandbox — the virtual")
-        print("         display, the GTK apps, the recorder, the executor, the")
-        print("         egress lock — needs macOS or Linux. Under WSL2 you get a")
-        print("         Linux userspace, but nested virtualisation is not")
-        print("         something to rely on; see the handbook, §21.")
-    else:
-        print("         Install it: brew install lima")
+# ─── the sandbox: WSL2 ──────────────────────────────────────────────────────
+head("The sandbox (WSL2)")
+windows = platform.system() == "Windows"
+check("this is Windows", windows,
+      "this build drives WSL; on another OS only the portable half above runs",
+      fatal=False)
 
+wsl = shutil.which("wsl.exe") or shutil.which("wsl")
+if check("wsl.exe", bool(wsl), wsl or "not installed — run windows\\setup.ps1 "
+         "as administrator", fatal=windows):
+    import subprocess
+    env = dict(os.environ, WSL_UTF8="1")
+    try:
+        ver = subprocess.run([wsl, "--version"], capture_output=True, text=True,
+                             encoding="utf-8", errors="replace", env=env,
+                             timeout=30)
+        first = (ver.stdout.replace("\x00", "").strip().splitlines() or [""])[0]
+        # The Store build of WSL answers --version; the old inbox one does not,
+        # and is too old for systemd — which every service in the sandbox is.
+        check("WSL from the Store, with systemd support", ver.returncode == 0,
+              first or "too old — run: wsl --update")
+    except (OSError, subprocess.SubprocessError) as e:
+        check("WSL answers", False, str(e))
+
+    try:
+        sys.path.insert(0, str(ROOT / "host"))
+        import vm
+        state = vm.status().get("state")
+        check("the shishya sandbox exists", state not in ("absent", "no-wsl"),
+              state if state != "absent" else
+              'not yet — python -c "import host.vm as vm; vm.create()"',
+              fatal=False)
+        if state not in ("absent", "no-wsl"):
+            check("its disk is outside the repository", vm.DISK.exists(),
+                  str(vm.DISK), fatal=False)
+    except Exception as e:                               # noqa: BLE001
+        check("host/vm.py can ask WSL", False, f"{type(e).__name__}: {e}")
+
+wslconfig = Path.home() / ".wslconfig"
+mirrored = False
+if wslconfig.is_file():
+    import re
+    mirrored = bool(re.search(r"(?im)^\s*networkingMode\s*=\s*mirrored",
+                              wslconfig.read_text(encoding="utf-8", errors="replace")))
+check("WSL networking is NAT, which the egress lock is written for", not mirrored,
+      f"{wslconfig} sets networkingMode=mirrored" if mirrored else "")
+
+# ─── the model ──────────────────────────────────────────────────────────────
+head("The model")
 try:
     with socket.create_connection(("127.0.0.1", 11434), timeout=2):
-        check("a local model is reachable on :11434", True, fatal=False)
+        check("Ollama is answering on :11434", True, fatal=False)
 except OSError:
-    check("a local model is reachable on :11434", False,
+    check("Ollama is answering on :11434", False,
           "start Ollama — the apps answer through it", fatal=False)
+
+# The sandbox reaches Windows at its NAT gateway, not at 127.0.0.1, and
+# Ollama for Windows listens on 127.0.0.1 alone unless told otherwise. It
+# presents as every app in the sandbox failing to answer, while `ollama run`
+# on Windows works perfectly.
+host_var = os.environ.get("OLLAMA_HOST", "")
+check("Ollama listens beyond loopback, so the sandbox can reach it",
+      host_var.startswith("0.0.0.0"),
+      f"OLLAMA_HOST={host_var or '(unset)'} — windows\\setup.ps1 sets it and "
+      "scopes the firewall to WSL", fatal=False)
 
 # ─── what the sandbox would mount ───────────────────────────────────────────
 head("The security boundary")
-cfg = (ROOT / "vm" / "lima.yaml").read_text(encoding="utf-8")
-check("lima.yaml is a template, not one laptop's paths",
-      "__SHISHYA_ROOT__" in cfg,
-      "resolved against this checkout when the VM is created")
-if "/Users/" in cfg:
-    check("no absolute home path is baked into the boundary", False,
-          "someone's home directory is still written out in full")
+conf = (ROOT / "vm" / "wsl.conf").read_text(encoding="utf-8")
+fstab = (ROOT / "vm" / "fstab").read_text(encoding="utf-8")
+
+
+def _section(text, name):
+    """key = value pairs of one [section] of an ini-shaped file."""
+    out, inside = {}, False
+    for line in text.splitlines():
+        line = line.split("#", 1)[0].strip()
+        if line.startswith("["):
+            inside = line.lower() == f"[{name}]"
+        elif inside and "=" in line:
+            k, v = (x.strip().lower() for x in line.split("=", 1))
+            out[k] = v
+    return out
+
+
+check("Windows drives are not automounted into the sandbox",
+      _section(conf, "automount").get("enabled") == "false",
+      "vm/wsl.conf [automount] enabled = false")
+check("the sandbox cannot start Windows programs",
+      _section(conf, "interop").get("enabled") == "false",
+      "vm/wsl.conf [interop] enabled = false")
+check("fstab is a template, not one laptop's paths",
+      "__SHISHYA_ROOT__" in fstab,
+      "resolved against this checkout when the sandbox is created")
+mounts = [ln.split()[1] for ln in fstab.splitlines()
+          if ln.strip() and not ln.lstrip().startswith("#")]
+check("exactly two folders cross the boundary",
+      sorted(mounts) == ["/home/clone/shared", "/opt/shishya"],
+      ", ".join(mounts))
+check("the checkout is on a local drive", not str(ROOT).startswith("\\\\"),
+      str(ROOT))
+
+# Git for Windows checks out CRLF unless told not to, and these run inside
+# the sandbox under bash. .gitattributes says LF; this proves it took.
+crlf = [p.name for p in (ROOT / "vm").glob("*.sh") if b"\r" in p.read_bytes()]
+check("the sandbox's shell scripts have Unix line endings", not crlf,
+      ", ".join(crlf) + " — git add --renormalize . && git checkout -- vm"
+      if crlf else "")
 
 print()
 if fails:

@@ -109,7 +109,7 @@ UNIT
 
 # ─── The browser bridge ─────────────────────────────────────────────────────
 # --heartbeat: a WebSocket ping every 30s. The connection reaches the browser
-# through Lima's ssh port-forward, and a silent one gets reaped by the tunnel
+# through WSL's localhost forwarding, and a silent one gets reaped by the relay
 # after an idle spell — the screen then freezes on its last frame rather than
 # reporting that it has gone, which is the worst way for it to fail.
 cat > /etc/systemd/system/shishya-novnc.service <<'UNIT'

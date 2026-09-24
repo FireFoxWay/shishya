@@ -210,7 +210,7 @@ class SystemApp(Gtk.Window):
 
         self.share.set_text(
             f"{len(now)} cores and {total / 1e9:.0f} GB are given to the sandbox. "
-            f"Changing that is done on the host, in vm/lima.yaml, and needs the "
+            f"Changing that is done on Windows, in %UserProfile%\\.wslconfig, and needs the "
             f"sandbox restarted — it is not something the clone can grant itself.")
         return True
 

@@ -800,8 +800,8 @@ Handler.extensions_map.update({".js": "text/javascript", ".mjs": "text/javascrip
 if __name__ == "__main__":
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8200
 
-    # Listen on both loopback addresses, because "localhost" resolves to ::1
-    # first on macOS and a server bound only to 127.0.0.1 then refuses its own
+    # Listen on both loopback addresses, because "localhost" can resolve to
+    # ::1 first (Windows does, as macOS did) and a server bound only to 127.0.0.1 then refuses its own
     # name. Binding "" would fix that too and would also expose a panel that
     # can start programs inside the sandbox to everyone on the wifi, so it is
     # two loopback sockets rather than one wildcard.
@@ -822,6 +822,13 @@ if __name__ == "__main__":
         sys.exit(f"could not bind port {port} on either loopback address")
 
     threading.Thread(target=scheduler, daemon=True).start()
+
+    # Who is serving, and since when — demo.py stops the panel by this pid and
+    # compares the file's age with serve.py's to catch a panel running old
+    # code. Windows has no pgrep and no `ps -o lstart` to ask instead.
+    os.makedirs(os.path.join(ROOT, "var"), exist_ok=True)
+    with open(os.path.join(ROOT, "var", "serve.pid"), "w", encoding="utf-8") as fh:
+        fh.write(str(os.getpid()))
 
     print(f"Shishya → http://localhost:{port}   (Ctrl-C to stop)")
     for server in servers[1:]:
