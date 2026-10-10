@@ -1,0 +1,15 @@
+{
+  "name": "tidefruit",
+  "version": "1.0.0",
+  "description": "A 2D multiplayer grind across four seas: 3,000 levels, 27 fruits, bosses, sea beasts and PvP.",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/sim.js && node test/smoke.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "UNLICENSED"
+}
