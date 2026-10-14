@@ -24,6 +24,16 @@ import urllib.parse
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
+
+# Output is UTF-8 whatever the machine's code page. Started by Shishya.exe,
+# stdout is a log file, and Windows writes files in cp1252 unless told
+# otherwise — the startup line's arrow raised UnicodeEncodeError and the
+# panel died before it had served a single page, on every launch.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except AttributeError:
+        pass          # None under pythonw with nowhere to write: nothing to fix
 sys.path.insert(0, os.path.join(ROOT, "host"))
 
 import experiments       # noqa: E402

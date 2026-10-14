@@ -123,7 +123,10 @@ def start_panel(restart=False):
     quiet = exe.with_name("pythonw.exe")
     python = str(quiet if os.name == "nt" and quiet.exists() else exe)
     with open(ROOT / "var" / "serve.log", "ab") as log:
-        subprocess.Popen([python, str(ROOT / "serve.py"), str(PORT)], cwd=ROOT,
+        # -X utf8 and PYTHONUTF8 as well as serve.py's own fix: everything the
+        # panel starts in turn inherits them.
+        subprocess.Popen([python, "-X", "utf8", str(ROOT / "serve.py"), str(PORT)],
+                         cwd=ROOT, env=dict(os.environ, PYTHONUTF8="1"),
                          stdin=subprocess.DEVNULL, stdout=log,
                          stderr=subprocess.STDOUT,
                          creationflags=vm._DETACHED | vm._NO_WINDOW,

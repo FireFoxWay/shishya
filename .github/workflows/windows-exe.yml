@@ -57,6 +57,10 @@ jobs:
           $py  = "dist\Shishya\payload\runtime\python.exe"
           & $py -X utf8 -c "import sys; sys.path.insert(0, r'$app\host'); import vm, launch, setup_flow; print('imports ok:', vm.status())"
           if ($LASTEXITCODE -ne 0) { throw "imports failed on the embeddable Python" }
+          # Output to a file in the legacy code page, as on a real Windows PC:
+          # the runner's own UTF-8 setting hid a crash every user would hit.
+          $env:PYTHONIOENCODING = "cp1252"
+          $env:PYTHONUTF8 = "0"
           $p = Start-Process $py -ArgumentList "-X","utf8","$app\serve.py","8255" -PassThru -NoNewWindow `
                  -RedirectStandardOutput serve.out -RedirectStandardError serve.err
           $ok = $false
