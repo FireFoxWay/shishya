@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Shishya — setup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" />
+<style>
+  /* The same language as the panel: hairlines, inversion for emphasis, no
+     colour except for the one thing that is wrong. */
+  :root {
+    --bg: #E8E9EB; --card: rgba(255,255,255,.55); --ink: #0B0C0E; --ink-2: #4A4D53;
+    --line: #0B0C0E; --bad: #B3261E; --ok: #1E6B3A;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #121315; --card: rgba(255,255,255,.04); --ink: #ECEDEF; --ink-2: #A3A7AE;
+            --line: #ECEDEF; --bad: #FF8A80; --ok: #7BD49A; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.5 Archivo, system-ui, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 48px 16px 64px; }
+  h1 { font-size: 13px; letter-spacing: .18em; text-transform: uppercase; margin: 0 0 6px; }
+  .lede { color: var(--ink-2); margin: 0 0 32px; }
+  ol { list-style: none; padding: 0; margin: 0; counter-reset: step; }
+  li { counter-increment: step; display: grid; grid-template-columns: 32px 1fr auto;
+       gap: 4px 16px; align-items: start; padding: 18px 0; border-top: 1px solid var(--line); }
+  li:last-child { border-bottom: 1px solid var(--line); }
+  li::before { content: counter(step, decimal-leading-zero);
+               font: 500 12px "IBM Plex Mono", monospace; padding-top: 3px; }
+  .t { font-weight: 600; }
+  .d { color: var(--ink-2); font-size: 14px; grid-column: 2; }
+  .mark { font: 500 12px "IBM Plex Mono", monospace; letter-spacing: .08em;
+          text-transform: uppercase; padding-top: 3px; text-align: right; }
+  .mark.ok { color: var(--ok); }
+  .mark.no { color: var(--bad); }
+  button, .go { grid-column: 2; justify-self: start; margin-top: 8px; cursor: pointer;
+           font: 600 12px Archivo, sans-serif; letter-spacing: .12em; text-transform: uppercase;
+           padding: 10px 16px; border: 1px solid var(--line); background: var(--ink);
+           color: var(--bg); border-radius: 2px; text-decoration: none; }
+  button[disabled] { opacity: .4; cursor: default; }
+  .go { display: inline-block; margin-top: 28px; }
+  pre { margin: 24px 0 0; padding: 14px; border: 1px solid var(--line); background: var(--card);
+        font: 12px/1.55 "IBM Plex Mono", monospace; white-space: pre-wrap;
+        max-height: 340px; overflow: auto; }
+  .busy { font: 500 12px "IBM Plex Mono", monospace; color: var(--ink-2); margin-top: 24px; }
+  .err { color: var(--bad); margin-top: 16px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Shishya · setup</h1>
+  <p class="lede">Each step checks itself. Press the button next to anything that is not ready;
+    this page keeps up on its own.</p>
+  <ol id="steps"></ol>
+  <div id="busy" class="busy" hidden></div>
+  <pre id="log" hidden></pre>
+  <div id="err" class="err" hidden></div>
+  <a id="go" class="go" href="/" hidden>Open Shishya →</a>
+</main>
+<script type="module">
+const $ = (id) => document.getElementById(id);
+let busy = false;
+
+async function api(route, body) {
+  const r = await fetch("/api/" + route, body ? {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body) } : undefined);
+  const data = await r.json();
+  if (data.error) throw new Error(data.error);
+  return data;
+}
+
+function paint(s) {
+  busy = s.job.running;
+  const list = $("steps");
+  list.replaceChildren(...s.steps.map((step) => {
+    const li = document.createElement("li");
+    const t = document.createElement("div"); t.className = "t"; t.textContent = step.title;
+    const m = document.createElement("div");
+    m.className = "mark " + (step.ok ? "ok" : "no"); m.textContent = step.ok ? "ready" : "not yet";
+    const d = document.createElement("div"); d.className = "d"; d.textContent = step.detail || "";
+    li.append(t, m, d);
+    if (step.action) {
+      const b = document.createElement("button");
+      b.textContent = step.action;
+      b.disabled = busy;
+      b.addEventListener("click", async () => {
+        $("err").hidden = true;
+        try { await api("setup/run", { step: step.id }); tick(); }
+        catch (e) { $("err").textContent = e.message; $("err").hidden = false; }
+      });
+      li.append(b);
+    }
+    return li;
+  }));
+
+  $("busy").hidden = !busy;
+  $("busy").textContent = busy ? `Working: ${s.job.name} … (this page updates by itself)` : "";
+  const log = $("log");
+  if (s.job.lines.length) {
+    const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
+    log.textContent = s.job.lines.join("\n");
+    log.hidden = false;
+    if (atEnd) log.scrollTop = log.scrollHeight;
+  }
+  $("go").hidden = !s.ready;
+}
+
+async function tick() {
+  try { paint(await api("setup/state")); $("err").hidden = true; }
+  catch (e) { $("err").textContent = "Lost touch with Shishya: " + e.message; $("err").hidden = false; }
+}
+tick();
+setInterval(tick, 3000);
+</script>
+</body>
+</html>

@@ -746,3 +746,6 @@ body {
 .seg .tool + .tool { border-left: 0; }
 .tool.mini { min-width: 30px; padding: 0 8px; justify-content: center;
              font-size: 13px; letter-spacing: 0; }
+
+/* The Setup link sits beside the theme button and borrows its look. */
+a.themeSwap { text-decoration: none; display: inline-flex; align-items: center; }

@@ -334,6 +334,14 @@ class Handler(SimpleHTTPRequestHandler):
 
     def route(self, method, route, body):
         # ── read ──
+        if route == "setup/state":
+            import setup_flow
+            return setup_flow.state()
+        if route == "setup/run":
+            import setup_flow
+            step = str(body.get("step", ""))
+            ledger.record(ledger.INFO, "setup." + step, vm.NAME, actor="guru")
+            return setup_flow.run(step)
         if route == "status":
             state = vm.status()
             live = state.get("state") == "running"

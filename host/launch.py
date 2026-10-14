@@ -173,7 +173,7 @@ def run(say=print, open_browser=True):
     return 0
 
 
-def create(say=print):
+def create(say=print, open_browser=True):
     """First-time sandbox build, then everything else."""
     st = vm.status()
     state = st.get("state")
@@ -206,7 +206,7 @@ def create(say=print):
                      "python demo.py check")
         say("  done. Taking the clean snapshot the undo button returns to …")
         vm.snapshot(vm.CLEAN_TAG)
-    return run(say)
+    return run(say, open_browser=open_browser)
 
 
 def stop(say=print):
@@ -219,6 +219,44 @@ def stop(say=print):
     return 0
 
 
+def gui(restart=False):
+    """What Shishya.exe runs. No terminal: everything is on a page.
+
+    The panel first, then the browser — onto the setup page until the sandbox
+    is built, onto the panel after. A built sandbox that is stopped is started
+    here, after the page is already open and saying so.
+    """
+    if not start_panel(restart=restart):
+        _message("Shishya could not start its control panel.\n\n"
+                 f"The log is {ROOT / 'var' / 'serve.log'}")
+        return 1
+    start_model()
+    import setup_flow
+    st = setup_flow.state()
+    page = "/" if st["ready"] else "/setup.html"
+    webbrowser.open(PANEL + page)
+    # Built but stopped: start it, with the page open and polling.
+    steps = {x["id"]: x for x in st["steps"]}
+    if steps["create"]["ok"] and not steps["start"]["ok"]:
+        try:
+            vm.start()
+        except Exception:                                 # noqa: BLE001
+            pass                  # the setup page shows the Start button
+    return 0
+
+
+def _message(text):
+    """A Windows message box — the only way to say something without a
+    console window."""
+    if os.name == "nt":
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(None, text, "Shishya", 0x10)
+    else:
+        print(text)
+
+
 if __name__ == "__main__":
     what = sys.argv[1] if len(sys.argv) > 1 else "run"
+    if what == "gui":
+        sys.exit(gui(restart="--restart" in sys.argv))
     sys.exit({"run": run, "create": create, "stop": stop}.get(what, run)())

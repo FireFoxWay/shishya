@@ -1,0 +1,98 @@
+# Builds Shishya.exe on a real Windows machine and publishes the folder as a
+# zip — on the "windows-latest" release, and as a run artifact.
+#
+# The folder: Shishya.exe (a PyInstaller-frozen windows/launcher.py), plus
+# payload\app (this commit) and payload\runtime (Python's embeddable build).
+# Nothing to install on the machine that runs it.
+name: Windows build
+
+on:
+  push:
+    branches: [main, claude/kind-clarke-nojp61]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  exe:
+    runs-on: windows-latest
+    env:
+      PY_EMBED: "3.12.10"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Assemble the folder
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $out = "dist\Shishya"
+          New-Item -ItemType Directory -Force "$out\payload\app", "$out\payload\runtime" | Out-Null
+
+          # Python itself — the embeddable build, a plain folder, no installer.
+          Invoke-WebRequest "https://www.python.org/ftp/python/$env:PY_EMBED/python-$env:PY_EMBED-embed-amd64.zip" -OutFile py.zip
+          Expand-Archive py.zip "$out\payload\runtime"
+          Set-Content "$out\payload\runtime\VERSION" $env:PY_EMBED
+
+          # The project exactly as committed, line endings per .gitattributes.
+          git archive --format=zip -o app.zip HEAD
+          Expand-Archive app.zip "$out\payload\app"
+          Remove-Item -Recurse -Force "$out\payload\app\docs", "$out\payload\app\.github" -ErrorAction SilentlyContinue
+          Set-Content "$out\payload\app\VERSION" "${{ github.sha }}"
+
+          # The launcher.
+          python -m pip install --quiet pyinstaller
+          pyinstaller --onefile --noconsole --name Shishya --distpath $out windows\launcher.py
+          Copy-Item windows\README.txt "$out\README.txt"
+
+      - name: Smoke test — the panel starts on the bundled Python
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $app = "dist\Shishya\payload\app"
+          $py  = "dist\Shishya\payload\runtime\python.exe"
+          & $py -X utf8 -c "import sys; sys.path.insert(0, r'$app\host'); import vm, launch, setup_flow; print('imports ok:', vm.status())"
+          if ($LASTEXITCODE -ne 0) { throw "imports failed on the embeddable Python" }
+          $p = Start-Process $py -ArgumentList "-X","utf8","$app\serve.py","8255" -PassThru -NoNewWindow `
+                 -RedirectStandardOutput serve.out -RedirectStandardError serve.err
+          $ok = $false
+          foreach ($i in 1..30) {
+            Start-Sleep 1
+            try {
+              $r = Invoke-RestMethod http://127.0.0.1:8255/api/setup/state -TimeoutSec 60
+              Write-Host ("setup page sees: " + (($r.steps | ForEach-Object { "$($_.id)=$($_.ok)" }) -join ", "))
+              $page = Invoke-WebRequest http://127.0.0.1:8255/setup.html -UseBasicParsing
+              if ($page.StatusCode -eq 200) { $ok = $true; break }
+            } catch { }
+          }
+          Stop-Process $p -Force -ErrorAction SilentlyContinue
+          Get-Content serve.out, serve.err -ErrorAction SilentlyContinue | Select-Object -Last 40
+          if (-not $ok) { throw "the panel did not answer on the bundled Python" }
+          Remove-Item -Recurse -Force "$app\var" -ErrorAction SilentlyContinue
+
+      - name: Zip
+        shell: pwsh
+        run: Compress-Archive -Path dist\Shishya -DestinationPath Shishya-windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Shishya-windows
+          path: dist/Shishya
+
+      - name: Publish to the windows-latest release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $notes = "Built from ${{ github.ref_name }} at ${{ github.sha }}. Download Shishya-windows.zip, extract it to your Desktop, and double-click Shishya\Shishya.exe."
+          gh release view windows-latest *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create windows-latest Shishya-windows.zip --prerelease --title "Shishya for Windows" --notes $notes --target ${{ github.sha }}
+          } else {
+            gh release upload windows-latest Shishya-windows.zip --clobber
+            gh release edit windows-latest --notes $notes
+          }
