@@ -334,6 +334,10 @@ class Handler(SimpleHTTPRequestHandler):
 
     def route(self, method, route, body):
         # ── read ──
+        if route == "ping":
+            # Answers without asking WSL anything: this is how the launcher
+            # tells "the panel is up" from "the panel is busy waiting on WSL".
+            return {"ok": True, "pid": os.getpid()}
         if route == "setup/state":
             import setup_flow
             return setup_flow.state()

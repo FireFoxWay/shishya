@@ -54,14 +54,13 @@ def _wait(url, seconds):
 
 
 def panel_up():
-    return _up(f"{PANEL}/api/status")
+    # /api/ping, not /api/status: status asks WSL, and a WSL that is slow to
+    # answer — common right after it is installed — made a perfectly healthy
+    # panel look dead, and Shishya.exe said it could not start.
+    return _up(f"{PANEL}/api/ping")
 
 
-def stop_panel():
-    try:
-        pid = int(PIDFILE.read_text(encoding="utf-8").strip())
-    except (OSError, ValueError):
-        return False
+def _kill(pid):
     if os.name == "nt":
         subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
                        capture_output=True, creationflags=vm._NO_WINDOW)
@@ -70,8 +69,46 @@ def stop_panel():
             os.kill(pid, 15)
         except OSError:
             pass
+
+
+def _port_holder():
+    """The process listening on the panel's port, if it is a Shishya panel.
+
+    A panel started some other way — `shishya run` from a git checkout, an
+    older Shishya.exe — has its pid file somewhere else, holds the port, and
+    the new panel cannot bind it. Only a serve.py is ever stopped this way:
+    whatever else is on the port is somebody else's, and is reported instead.
+    """
+    if os.name != "nt":
+        return None
+    ps = (f"$c = Get-NetTCPConnection -LocalPort {PORT} -State Listen -ErrorAction SilentlyContinue | "
+          "Select-Object -First 1; if ($c) { $p = Get-CimInstance Win32_Process "
+          "-Filter \"ProcessId=$($c.OwningProcess)\"; \"$($c.OwningProcess)|$($p.CommandLine)\" }")
+    try:
+        out = subprocess.run(["powershell.exe", "-NoProfile", "-Command", ps],
+                             capture_output=True, text=True, timeout=20,
+                             creationflags=vm._NO_WINDOW).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    pid, _, cmd = out.partition("|")
+    return (int(pid), cmd) if pid.isdigit() else None
+
+
+def stop_panel():
+    stopped = False
+    try:
+        _kill(int(PIDFILE.read_text(encoding="utf-8").strip()))
+        stopped = True
+    except (OSError, ValueError):
+        pass
     PIDFILE.unlink(missing_ok=True)
-    return True
+    holder = _port_holder()
+    if holder and "serve.py" in holder[1]:
+        _kill(holder[0])
+        stopped = True
+    if stopped:
+        time.sleep(1)
+    return stopped
 
 
 def start_panel(restart=False):
@@ -91,7 +128,14 @@ def start_panel(restart=False):
                          stderr=subprocess.STDOUT,
                          creationflags=vm._DETACHED | vm._NO_WINDOW,
                          start_new_session=os.name != "nt")
-    return _wait(f"{PANEL}/api/status", 25)
+    if _wait(f"{PANEL}/api/ping", 45):
+        return True
+    holder = _port_holder()
+    if holder:
+        with open(ROOT / "var" / "serve.log", "a", encoding="utf-8") as log:
+            log.write(f"\nport {PORT} is held by another program: pid {holder[0]} "
+                      f"{holder[1]}\n")
+    return False
 
 
 def model_up():
