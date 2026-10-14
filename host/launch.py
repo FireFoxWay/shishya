@@ -271,8 +271,16 @@ def gui(restart=False):
     here, after the page is already open and saying so.
     """
     if not start_panel(restart=restart):
+        # The end of the log, in the box itself: a screenshot of this should
+        # be enough to say what went wrong, without opening any file.
+        try:
+            tail = (ROOT / "var" / "serve.log").read_text(
+                encoding="utf-8", errors="replace").strip().splitlines()[-12:]
+        except OSError:
+            tail = ["(the log is empty — the panel never started)"]
         _message("Shishya could not start its control panel.\n\n"
-                 f"The log is {ROOT / 'var' / 'serve.log'}")
+                 + "\n".join(line[:160] for line in tail)
+                 + f"\n\nFull log: {ROOT / 'var' / 'serve.log'}")
         return 1
     start_model()
     import setup_flow
